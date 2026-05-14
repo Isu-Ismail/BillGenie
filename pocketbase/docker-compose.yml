@@ -1,0 +1,15 @@
+services:
+  pocketbase:
+    image: ghcr.io/muchobien/pocketbase:latest
+    container_name: pocketbase
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - ./pb_data:/pb_data
+    # We only pass the arguments, not the path to the file
+
+    command:
+      - serve
+      - --http=0.0.0.0:8090
+      - --dir=/pb_data

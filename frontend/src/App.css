@@ -1,0 +1,22 @@
+/* App.css or Layout.css */
+.app-container {
+  display: flex;
+  min-height: 100vh;
+  background-color: #f4f4f5;
+  /* Light gray background for the main content area */
+}
+
+.main-content {
+  flex: 1;
+  padding: 2rem;
+  /* Push the content right by exactly the width of the desktop sidebar */
+  margin-left: 260px;
+}
+
+/* On mobile, remove the margin since the sidebar is hidden behind a hamburger menu */
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 0;
+    padding: 1rem;
+  }
+}

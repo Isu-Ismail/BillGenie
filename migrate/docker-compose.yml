@@ -1,0 +1,30 @@
+services:
+  pocketbase:
+    image: ghcr.io/muchobien/pocketbase:latest
+    container_name: bill-generator-pocketbase
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./pocketbase/pb_data:/pb_data
+    command:
+      - serve
+      - --http=0.0.0.0:8090
+      - --dir=/pb_data
+
+  app:
+    image: ismailisims/billgenie:v1.0
+    container_name: bill-generator-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - POCKETBASE_URL=http://pocketbase:8090
+    depends_on:
+      - pocketbase
+
+networks:
+  default:
+    name: bill-generator-network
