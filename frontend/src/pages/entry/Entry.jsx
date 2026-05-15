@@ -15,28 +15,55 @@ import {
   MapPin,
   Phone,
   CheckCircle,
-  Search
+  Search,
+  Loader2
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import styles from './Entry.module.css';
 import DonorSearch from './DonorSearch';
-
+import { API_ENDPOINTS } from '../../api';
+import SingleEntry from './tabs/SingleEntry/SingleEntry';
+import ConfirmModal from '../../components/ConfirmModal';
+import StreetSelect from './StreetSelect';
 
 const Entry = () => {
-  const [isBatchMode, setIsBatchMode] = useState(false);
 
-  const [trusts, setTrusts] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [groupedCategories, setGroupedCategories] = useState({ assigned: [], others: [] });
+
+  const [trusts, setTrusts] = useState(() => {
+    const saved = sessionStorage.getItem('entry_cached_trusts');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [categories, setCategories] = useState(() => {
+    const saved = sessionStorage.getItem('entry_cached_categories');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (trusts.length === 0 || categories.length === 0) {
+      fetchData();
+    }
+    
+    // If we have a pre-filled trust, fetch its categories
+    if (entries[0]?.trust_id) {
+      fetchGroupedCategories(entries[0].trust_id, 0);
+    }
+  }, []);
 
   const [message, setMessage] = useState({ type: '', text: '' });
   
   // Modal states
   const [showDonorModal, setShowDonorModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [directJson, setDirectJson] = useState('');
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    type: 'danger',
+    confirmText: 'Confirm'
+  });
   const fileInputRef = useRef(null);
 
   const handleProcessDirectJson = async () => {
@@ -66,6 +93,11 @@ const Entry = () => {
     }
   };
 
+  // Load prefilled values from localStorage
+  const getPrefilledValue = (key, defaultVal = '') => {
+    return localStorage.getItem(`entry_prefill_${key}`) || defaultVal;
+  };
+
   // New Donor state
   const [newDonor, setNewDonor] = useState({
     name: '',
@@ -79,55 +111,150 @@ const Entry = () => {
   const emptyItem = { category_id: '', amount: '' };
   const emptyDonorEntry = {
     donor_id: '',
-    trust_id: '',
-    hijri_year: '',
+    trust_id: getPrefilledValue('trust_id'),
+    hijri_year: getPrefilledValue('hijri_year'),
     payment_date: new Date().toISOString().split('T')[0],
     notes: '',
     items: [{ ...emptyItem }],
     showNewTrust: false,
-    trust_name: ''
+    trust_name: '',
+    isCollapsed: false
   };
 
-
   const [entries, setEntries] = useState([{ ...emptyDonorEntry }]);
+
+  const handleToggleCollapse = (index) => {
+    setEntries(prev => prev.map((entry, i) => 
+      i === index ? { ...entry, isCollapsed: !entry.isCollapsed } : entry
+    ));
+  };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Ctrl + Shift + N for New Donor
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        addDonorRow();
+      }
+      
+      // Ctrl + Shift + S for Save
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSubmit(new Event('submit'));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [entries, categories]); // Need entries for addDonorRow logic
+
+  // Save prefilled values whenever they change
+  useEffect(() => {
+    if (entries[0]) {
+      if (entries[0].trust_id) localStorage.setItem('entry_prefill_trust_id', entries[0].trust_id);
+      if (entries[0].hijri_year) localStorage.setItem('entry_prefill_hijri_year', entries[0].hijri_year);
+    }
+  }, [entries[0]?.trust_id, entries[0]?.hijri_year]);
 
   // Fetch real data from API
   useEffect(() => {
     fetchData();
   }, []);
 
-  const fetchGroupedCategories = async (trustId, allCats = categories) => {
-    if (!trustId) {
-      setGroupedCategories({ assigned: [], others: allCats });
-      return;
-    }
-    try {
-      const res = await fetch(`http://localhost:8000/api/categories/by-trust/${trustId}`);
-      if (res.ok) {
-        setGroupedCategories(await res.json());
+  const getTrustCategoryCache = () => {
+    const saved = sessionStorage.getItem('entry_trust_category_cache');
+    return saved ? JSON.parse(saved) : {};
+  };
+
+  const saveTrustCategoryCache = (cache) => {
+    sessionStorage.setItem('entry_trust_category_cache', JSON.stringify(cache));
+  };
+
+  const fetchGroupedCategories = async (trustId, donorIndex = -1) => {
+    if (!trustId) return { assigned: [], others: categories };
+    
+    // Check Cache
+    const currentCache = getTrustCategoryCache();
+    if (currentCache[trustId]) {
+      const cachedData = currentCache[trustId];
+      if (donorIndex !== -1) {
+        setEntries(prev => {
+          const newEntries = [...prev];
+          if (newEntries[donorIndex]) {
+            newEntries[donorIndex].items = cachedData.assigned.map(cat => ({
+              category_id: cat.id,
+              amount: '',
+              isAssigned: true
+            }));
+          }
+          return newEntries;
+        });
       }
-    } catch (err) { console.error(err); }
+      return cachedData;
+    }
+
+    try {
+      const res = await fetch(`${API_ENDPOINTS.CATEGORIES.BY_TRUST(trustId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        
+        // Update Session Cache
+        const updatedCache = { ...currentCache, [trustId]: data };
+        saveTrustCategoryCache(updatedCache);
+        
+        if (donorIndex !== -1) {
+          setEntries(prev => {
+            const newEntries = [...prev];
+            if (newEntries[donorIndex]) {
+              newEntries[donorIndex].items = data.assigned.map(cat => ({
+                category_id: cat.id,
+                amount: '',
+                isAssigned: true
+              }));
+            }
+            return newEntries;
+          });
+        }
+        return data;
+      }
+    } catch (error) {
+      console.error("Error fetching grouped categories:", error);
+    }
+    return { assigned: [], others: categories };
   };
 
   const fetchData = async () => {
     try {
       const [catRes, trustRes] = await Promise.all([
-        fetch('http://localhost:8000/api/categories/'),
-        fetch('http://localhost:8000/api/trusts/')
+        fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=100`),
+        fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=100`)
       ]);
       
       if (catRes.ok) {
         const catData = await catRes.json();
-        setCategories(catData);
-        setGroupedCategories({ assigned: [], others: catData });
+        const cats = catData.items || [];
+        setCategories(cats);
+        sessionStorage.setItem('entry_cached_categories', JSON.stringify(cats));
       }
+      
       if (trustRes.ok) {
         const trustData = await trustRes.json();
-        setTrusts(trustData);
+        const trustList = trustData.items || [];
+        setTrusts(trustList);
+        sessionStorage.setItem('entry_cached_trusts', JSON.stringify(trustList));
+        
+        // Auto-select first trust if none selected
+        if (trustList.length > 0 && !entries[0].trust_id) {
+          const firstTrustId = trustList[0].id;
+          const newEntries = [...entries];
+          newEntries[0].trust_id = firstTrustId;
+          setEntries(newEntries);
+          fetchGroupedCategories(firstTrustId, 0);
+        }
       }
     } catch (error) {
       console.error("Error fetching data:", error);
-      setMessage({ type: 'error', text: 'Failed to load categories/trusts' });
     }
   };
 
@@ -136,14 +263,13 @@ const Entry = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/donors/create', {
+      const response = await fetch(API_ENDPOINTS.DONORS.CREATE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newDonor)
       });
       if (response.ok) {
         const created = await response.json();
-        setDonors([...donors, created]);
         setShowDonorModal(false);
         setNewDonor({ name: '', gender: 'M', mobile: '', door_no: '', street: '' });
         setMessage({ type: 'success', text: `Donor ${created.name} added successfully!` });
@@ -212,18 +338,18 @@ const Entry = () => {
 
   const handleImportExcel = async (e) => {
     const file = e.target.files[0];
-    if (!file || trusts.length === 0) return;
+    if (!file) return;
 
     setLoading(true);
     setMessage({ type: '', text: '' });
     
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('trust_id', entries[0].trust_id || trusts[0].id);
-    formData.append('hijri_year', entries[0].hijri_year || '1446');
+    formData.append('trust_id', entries[0]?.trust_id || '');
+    formData.append('hijri_year', entries[0]?.hijri_year || '1446');
 
     try {
-      const response = await fetch('http://localhost:8000/api/new-entry/import-excel', {
+      const response = await fetch(API_ENDPOINTS.TRANSACTIONS.IMPORT_EXCEL, {
         method: 'POST',
         body: formData
       });
@@ -255,7 +381,7 @@ const Entry = () => {
         const donorsToImport = Array.isArray(json) ? json : [json];
         
         setLoading(true);
-        const response = await fetch('http://localhost:8000/api/donors/batch-create', {
+        const response = await fetch(API_ENDPOINTS.DONORS.BATCH_CREATE, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(donorsToImport)
@@ -277,14 +403,54 @@ const Entry = () => {
     reader.readAsText(file);
   };
 
-  const addDonorRow = () => {
-    setEntries([...entries, { ...emptyDonorEntry, items: [{ ...emptyItem }] }]);
+  const [shouldCopyDetails, setShouldCopyDetails] = useState(true);
+
+  const addDonorRow = async () => {
+    const lastEntry = entries[entries.length - 1];
+    let newItems = [{ ...emptyItem }];
+
+    if (shouldCopyDetails && lastEntry && lastEntry.trust_id) {
+      // Use Session Cache to populate items if trust is copied
+      const currentCache = getTrustCategoryCache();
+      const cached = currentCache[lastEntry.trust_id];
+      if (cached && cached.assigned.length > 0) {
+        newItems = cached.assigned.map(cat => ({
+          category_id: cat.id,
+          amount: '',
+          isAssigned: true
+        }));
+      }
+    }
+
+    const newEntry = { 
+      ...emptyDonorEntry, 
+      items: newItems,
+      isCollapsed: false
+    };
+
+    if (shouldCopyDetails && lastEntry) {
+      newEntry.trust_id = lastEntry.trust_id;
+      newEntry.hijri_year = lastEntry.hijri_year;
+      newEntry.payment_date = lastEntry.payment_date;
+      newEntry.showNewTrust = lastEntry.showNewTrust;
+      newEntry.trust_name = lastEntry.trust_name;
+    }
+
+    setEntries(prev => prev.map(e => ({ ...e, isCollapsed: true })).concat(newEntry));
   };
 
   const removeDonorRow = (index) => {
     if (entries.length > 1) {
-      const newEntries = entries.filter((_, i) => i !== index);
-      setEntries(newEntries);
+      setConfirmModal({
+        isOpen: true,
+        title: "Remove Donor?",
+        message: "Are you sure you want to remove this donor entry? All entered amounts for this donor will be lost.",
+        confirmText: "Remove",
+        type: "danger",
+        onConfirm: () => {
+          setEntries(prev => prev.filter((_, i) => i !== index));
+        }
+      });
     }
   };
 
@@ -306,11 +472,12 @@ const Entry = () => {
     const newEntries = [...entries];
     newEntries[donorIndex][field] = value;
     
-    // If trust selection changes, refresh categories for the entire form
+    // If trust selection changes, refresh categories for this specific entry
     if (field === 'trust_id') {
-      fetchGroupedCategories(value);
+      fetchGroupedCategories(value, donorIndex);
     } else if (field === 'showNewTrust') {
-      fetchGroupedCategories(null);
+      // Clear items if switched to "New Trust" mode
+      newEntries[donorIndex].items = [{ ...emptyItem }];
     }
     
     setEntries(newEntries);
@@ -322,33 +489,95 @@ const Entry = () => {
     setEntries(newEntries);
   };
 
+  const handleBulkItemChange = (donorIndex, startItemIndex, values) => {
+    setEntries(prev => {
+      const newEntries = [...prev];
+      const items = [...newEntries[donorIndex].items];
+      values.forEach((val, i) => {
+        const targetIdx = startItemIndex + i;
+        if (items[targetIdx]) {
+          // Only update if it's a valid number
+          const num = parseFloat(val);
+          if (!isNaN(num)) {
+            items[targetIdx].amount = num.toString();
+          }
+        }
+      });
+      newEntries[donorIndex].items = items;
+      return newEntries;
+    });
+  };
+
+  const clearDonorItems = (donorIndex) => {
+    setConfirmModal({
+      isOpen: true,
+      title: "Clear All Fields?",
+      message: "This will reset all donation amounts for this donor to zero. This action cannot be undone.",
+      confirmText: "Clear All",
+      type: "danger",
+      onConfirm: () => {
+        setEntries(prev => {
+          const newEntries = [...prev];
+          newEntries[donorIndex].items = newEntries[donorIndex].items.map(item => ({
+            ...item,
+            amount: ''
+          }));
+          return newEntries;
+        });
+      }
+    });
+  };
+
+
+
   const calculateDonorTotal = (donorIndex) => {
     return entries[donorIndex].items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
+    
+    // Validation
+    const errors = [];
+    entries.forEach((entry, idx) => {
+      if (!entry.donor_id) errors.push(`Donor #${idx + 1} is missing.`);
+      if (!entry.trust_id && !entry.showNewTrust) errors.push(`Trust for Donor #${idx + 1} is missing.`);
+      
+      const year = parseInt(entry.hijri_year);
+      if (isNaN(year) || year < 1400 || year > 1500) {
+        errors.push(`Donor #${idx + 1}: Hijri year must be between 1400 and 1500.`);
+      }
+      
+      const total = entry.items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+      if (total <= 0) errors.push(`Donor #${idx + 1}: Total amount must be greater than 0.`);
+    });
+
+    if (errors.length > 0) {
+      setMessage({ type: 'error', text: errors[0] });
+      return;
+    }
+
     setLoading(true);
     setMessage({ type: '', text: '' });
 
     try {
-      for (const entry of entries) {
-        const payload = {
-          ...entry,
-          trust_id: entry.showNewTrust ? '' : entry.trust_id,
-          trust_name: entry.showNewTrust ? entry.trust_name : '',
-          total_amount: entry.items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0),
-          items: entry.items.filter(item => item.category_id && item.amount)
-        };
+      const payloads = entries.map(entry => ({
+        ...entry,
+        trust_id: entry.showNewTrust ? '' : entry.trust_id,
+        trust_name: entry.showNewTrust ? entry.trust_name : '',
+        total_amount: entry.items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0),
+        items: entry.items.filter(item => item.category_id && item.amount)
+      }));
 
+      const response = await fetch(API_ENDPOINTS.TRANSACTIONS.CREATE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payloads)
+      });
 
-        const response = await fetch('http://localhost:8000/api/new-entry/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) throw new Error('Failed to save entry');
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.detail || 'Failed to save entries');
       }
 
       setMessage({ type: 'success', text: 'All entries saved successfully!' });
@@ -368,23 +597,9 @@ const Entry = () => {
           <p className={styles.subtitle}>Add donation records for one or multiple donors</p>
         </div>
         <div className={styles.headerActions}>
-          <button className={styles.secondaryBtn} onClick={() => setShowImportModal(true)}>
-            <FileJson size={18} /> Import Donors
+          <button onClick={() => setShowImportModal(true)} className={styles.importBtn}>
+            <Upload size={18} /> Bulk Import
           </button>
-          <div className={styles.modeToggle}>
-            <button 
-              className={`${styles.toggleBtn} ${!isBatchMode ? styles.activeMode : ''}`}
-              onClick={() => setIsBatchMode(false)}
-            >
-              <User size={18} /> Single
-            </button>
-            <button 
-              className={`${styles.toggleBtn} ${isBatchMode ? styles.activeMode : ''}`}
-              onClick={() => setIsBatchMode(true)}
-            >
-              <Users size={18} /> Batch
-            </button>
-          </div>
         </div>
       </header>
 
@@ -401,168 +616,58 @@ const Entry = () => {
       <form onSubmit={handleSubmit} className={styles.form}>
         <div className={styles.entriesList}>
           {entries.map((entry, dIndex) => (
-            <div key={dIndex} className={styles.donorCard}>
-              <div className={styles.cardHeader}>
-                <div className={styles.cardTitle}>
-                  <span className={styles.index}>{dIndex + 1}</span>
-                  <h3>Donor Information</h3>
-                </div>
-                <div className={styles.cardActions}>
-                  {isBatchMode && entries.length > 1 && (
-                    <button 
-                      type="button" 
-                      onClick={() => removeDonorRow(dIndex)}
-                      className={styles.removeDonor}
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className={styles.donorGrid}>
-                <div className={styles.inputGroup}>
-                  <label className={styles.labelWithAction}>
-                    Donor Name
-                    <button type="button" onClick={() => setShowDonorModal(true)} className={styles.inlineAddBtn}>
-                      <Plus size={14} /> New
-                    </button>
-                  </label>
-                  <DonorSearch 
-                    value={entry.donor_id}
-                    onChange={(val) => handleEntryChange(dIndex, 'donor_id', val)}
-                  />
-                </div>
-                <div className={styles.inputGroup}>
-                  <label className={styles.labelWithAction}>
-                    Association Trust
-                    <button 
-                      type="button" 
-                      onClick={() => handleEntryChange(dIndex, 'showNewTrust', !entry.showNewTrust)} 
-                      className={styles.inlineAddBtn}
-                    >
-                      {entry.showNewTrust ? <X size={14} /> : <Plus size={14} />} 
-                      {entry.showNewTrust ? ' Select Existing' : ' New'}
-                    </button>
-                  </label>
-                  {entry.showNewTrust ? (
-                    <input 
-                      type="text"
-                      placeholder="Enter new trust name"
-                      value={entry.trust_name}
-                      onChange={(e) => handleEntryChange(dIndex, 'trust_name', e.target.value)}
-                      className={styles.trustInput}
-                      required
-                    />
-                  ) : (
-                    <select 
-                      value={entry.trust_id}
-                      onChange={(e) => handleEntryChange(dIndex, 'trust_id', e.target.value)}
-                      className={styles.trustSelect}
-                      required
-                    >
-                      <option value="">Select Trust</option>
-                      {trusts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
-                  )}
-                </div>
-
-                <div className={styles.inputGroup}>
-                  <label>Hijri Year</label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g. 1446"
-                    className={styles.yearInput}
-                    value={entry.hijri_year}
-                    onChange={(e) => handleEntryChange(dIndex, 'hijri_year', e.target.value)}
-                  />
-
-
-                </div>
-                <div className={styles.inputGroup}>
-                  <label>Date</label>
-                  <input 
-                    type="date" 
-                    value={entry.payment_date}
-                    onChange={(e) => handleEntryChange(dIndex, 'payment_date', e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className={styles.categoriesSection}>
-                <div className={styles.itemsList}>
-                  {entry.items.map((item, iIndex) => (
-                    <div key={iIndex} className={styles.itemRow}>
-                      <div className={styles.inputGroup}>
-                        <select 
-                          value={item.category_id}
-                          onChange={(e) => handleItemChange(dIndex, iIndex, 'category_id', e.target.value)}
-                          required
-                        >
-                          <option value="">Category</option>
-                          {groupedCategories.assigned?.length > 0 && (
-                            <optgroup label="--- ASSIGNED TO THIS TRUST ---">
-                              {groupedCategories.assigned.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </optgroup>
-                          )}
-                          <optgroup label={groupedCategories.assigned?.length > 0 ? "--- GENERAL CATEGORIES ---" : "--- ALL CATEGORIES ---"}>
-                            {groupedCategories.others?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                          </optgroup>
-                        </select>
-                      </div>
-                      <div className={styles.inputGroup}>
-                        <input 
-                          type="number" 
-                          placeholder="Amount"
-                          value={item.amount}
-                          onChange={(e) => handleItemChange(dIndex, iIndex, 'amount', e.target.value)}
-                          required
-                        />
-                      </div>
-                      <button 
-                        type="button" 
-                        onClick={() => removeItemRow(dIndex, iIndex)}
-                        className={styles.removeItem}
-                        disabled={entry.items.length === 1}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ))}
-                  <button 
-                    type="button" 
-                    onClick={() => addItemRow(dIndex)}
-                    className={styles.addItemBtn}
-                    style={{ alignSelf: 'flex-start', marginTop: '10px' }}
-                  >
-                    <Plus size={16} /> Add Category
-                  </button>
-                </div>
-
-
-                <div className={styles.cardFooter}>
-                  <div className={styles.totalDisplay}>
-                    <span>Total:</span>
-                    <span className={styles.totalAmount}>₹{calculateDonorTotal(dIndex).toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <SingleEntry 
+              key={dIndex}
+              entry={entry}
+              dIndex={dIndex}
+              entriesCount={entries.length}
+              categories={categories}
+              trusts={trusts}
+              handleEntryChange={handleEntryChange}
+              handleItemChange={handleItemChange}
+              handleBulkItemChange={handleBulkItemChange}
+              clearDonorItems={clearDonorItems}
+              addItemRow={addItemRow}
+              removeItemRow={removeItemRow}
+              removeDonorRow={removeDonorRow}
+              calculateDonorTotal={calculateDonorTotal}
+              setShowDonorModal={setShowDonorModal}
+              handleToggleCollapse={handleToggleCollapse}
+            />
           ))}
         </div>
 
         <div className={styles.formActions}>
-          {isBatchMode && (
-            <button type="button" onClick={addDonorRow} className={styles.addBatchBtn}>
-              <UserPlus size={20} /> Add Another Donor
+          <div className={styles.batchControls}>
+            <label className={styles.continuityToggle}>
+              <input 
+                type="checkbox" 
+                checked={shouldCopyDetails}
+                onChange={(e) => setShouldCopyDetails(e.target.checked)}
+              />
+              <span>Auto-copy Trust/Year to new row</span>
+            </label>
+            <button 
+              type="button" 
+              onClick={addDonorRow} 
+              className={styles.addBatchBtn}
+              title="Add New Donor (Ctrl + Shift + N)"
+            >
+              <UserPlus size={18} /> Add Another Donor
             </button>
-          )}
-          <button type="submit" className={styles.submitBtn} disabled={loading}>
-            {loading ? 'Saving...' : (
-              <>
-                <Save size={20} /> Save All Entries
-              </>
+          </div>
+          <button 
+            type="submit" 
+            className={styles.submitBtn} 
+            disabled={loading}
+            title="Save Records (Ctrl + Shift + S)"
+          >
+            {loading ? (
+              <Loader2 className={styles.spin} size={20} />
+            ) : (
+              <Save size={20} />
             )}
+            <span>{loading ? 'Saving Records...' : 'Save All Records'}</span>
           </button>
         </div>
       </form>
@@ -581,9 +686,10 @@ const Entry = () => {
                 <input 
                   type="text" 
                   value={newDonor.name}
-                  onChange={(e) => setNewDonor({...newDonor, name: e.target.value})}
-                  placeholder="Enter donor's full name"
+                  onChange={(e) => setNewDonor({...newDonor, name: e.target.value.toUpperCase()})}
+                  placeholder="ENTER DONOR'S FULL NAME"
                   required
+                  style={{ textTransform: 'uppercase' }}
                 />
               </div>
               <div className={styles.modalGrid}>
@@ -607,25 +713,22 @@ const Entry = () => {
                   />
                 </div>
               </div>
-              <div className={styles.modalGrid}>
-                <div className={styles.inputGroup}>
-                  <label>Door No.</label>
-                  <input 
-                    type="text" 
-                    value={newDonor.door_no}
-                    onChange={(e) => setNewDonor({...newDonor, door_no: e.target.value})}
-                    placeholder="12/A"
-                  />
-                </div>
-                <div className={styles.inputGroup}>
-                  <label>Street / Area</label>
-                  <input 
-                    type="text" 
-                    value={newDonor.street}
-                    onChange={(e) => setNewDonor({...newDonor, street: e.target.value})}
-                    placeholder="Main Street"
-                  />
-                </div>
+              <div className={styles.inputGroup}>
+                <label>Door No.</label>
+                <input 
+                  type="text" 
+                  value={newDonor.door_no}
+                  onChange={(e) => setNewDonor({...newDonor, door_no: e.target.value})}
+                  placeholder="12/A"
+                />
+              </div>
+              <div className={styles.inputGroup}>
+                <label>Street / Area</label>
+                <StreetSelect 
+                  value={newDonor.street}
+                  onChange={(val) => setNewDonor({...newDonor, street: val})}
+                  placeholder="Search or add street..."
+                />
               </div>
               <div className={styles.modalFooter}>
                 <button type="button" onClick={() => setShowDonorModal(false)} className={styles.cancelBtn}>Cancel</button>
@@ -694,9 +797,21 @@ const Entry = () => {
         </div>
       )}
 
+      <ConfirmModal 
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        type={confirmModal.type}
+        onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+        onConfirm={() => {
+          confirmModal.onConfirm();
+          setConfirmModal({ ...confirmModal, isOpen: false });
+        }}
+      />
     </div>
   );
 };
 
 export default Entry;
-
+

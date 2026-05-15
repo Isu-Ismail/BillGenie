@@ -90,6 +90,62 @@ async def get_transactions(
         return {"status": False, "msg": str(e), "data": [], "pagination": None}
 
 
+@router.post("/create/")
+async def create_transaction(transaction: TransactionUpdate):
+    try:
+        # Calculate new total using object attributes
+        total = sum(item.amount for item in transaction.items)
+        
+        # Convert items list to dicts for PocketBase
+        items_data = [item.dict() for item in transaction.items]
+        
+        data = {
+            "items": items_data,
+            "total_amount": total,
+            "notes": transaction.notes,
+            "hijri_year": transaction.hijri_year,
+            "payment_date": transaction.payment_date,
+            "trust_id": transaction.trust_id
+        }
+
+        record = pb.collection('transactions').create(data)
+        return {
+            "status": True,
+            "msg": "Transaction created successfully",
+            "data": {"id": record.id}
+        }
+    except Exception as e:
+        print(f"Create Error: {e}")
+        return {"status": False, "msg": str(e), "data": None}
+
+
+@router.post("/batch-create/")
+async def batch_create_transactions(transactions: List[TransactionUpdate]):
+    try:
+        results = []
+        for t in transactions:
+            total = sum(item.amount for item in t.items)
+            items_data = [item.dict() for item in t.items]
+            data = {
+                "items": items_data,
+                "total_amount": total,
+                "notes": t.notes,
+                "hijri_year": t.hijri_year,
+                "payment_date": t.payment_date,
+                "trust_id": t.trust_id
+            }
+            results.append(pb.collection('transactions').create(data).id)
+        
+        return {
+            "status": True,
+            "msg": f"Successfully created {len(results)} transactions",
+            "data": results
+        }
+    except Exception as e:
+        print(f"Batch Create Error: {e}")
+        return {"status": False, "msg": str(e), "data": None}
+
+
 @router.put("/{transaction_id}")
 async def update_transaction(transaction_id: str, request: TransactionUpdate):
     try:

@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 import os
 
 # Import your route files
-from routes import new_entry, categories, donors, transactions, trusts, stats, reports, auth
+from routes import new_entry, categories, donors, transactions, trusts, stats, reports, auth, streets
 
 app = FastAPI(title="Billing System API")
 
@@ -25,6 +25,7 @@ app.include_router(categories.router, prefix="/api/categories", tags=["Categorie
 app.include_router(donors.router, prefix="/api/donors", tags=["Donors"])
 app.include_router(transactions.router, prefix="/api/transactions", tags=["Transactions"])
 app.include_router(trusts.router, prefix="/api/trusts", tags=["Trusts"])
+app.include_router(streets.router, prefix="/api/streets", tags=["Streets"])
 app.include_router(stats.router, prefix="/api/stats", tags=["Stats"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
@@ -64,4 +65,4 @@ if os.path.exists(frontend_path):
         return RedirectResponse(url=base_path + "/")
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

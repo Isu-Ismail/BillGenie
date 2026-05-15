@@ -13,9 +13,7 @@ services:
       - --dir=/pb_data
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ismailisims/billgenie:v1.4
     container_name: bill-generator-app
     restart: unless-stopped
     ports:

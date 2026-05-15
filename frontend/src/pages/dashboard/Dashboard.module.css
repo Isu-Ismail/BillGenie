@@ -17,26 +17,37 @@
 
 .actions {
   display: flex;
+  align-items: flex-end;
   gap: 1rem;
 }
 
 .primaryBtn {
   background: var(--primary);
   color: white;
-  padding: 0.75rem 1.5rem;
+  height: 42px;
+  padding: 0 1.5rem;
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   gap: 8px;
   font-weight: 600;
   box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.primaryBtn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(139, 92, 246, 0.4);
 }
 
 .secondaryBtn {
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text-main);
-  padding: 0.75rem 1.5rem;
+  height: 42px;
+  padding: 0 1.5rem;
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
@@ -49,15 +60,16 @@
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text-main);
-  padding: 8px 12px;
+  height: 42px;
+  padding: 0 12px;
   border-radius: var(--radius-md);
   font-size: 0.85rem;
   outline: none;
+  transition: border-color 0.2s ease;
 }
 
-.yearInput::placeholder {
-  color: var(--text-muted);
-  opacity: 0.6;
+.yearInput {
+  width: 130px;
 }
 
 
@@ -329,6 +341,30 @@
   .mainGrid {
     grid-template-columns: 1fr;
   }
+}
+
+.metaBar {
+  display: flex;
+  gap: 2rem;
+  padding: 0.75rem 1.5rem;
+  background: rgba(139, 92, 246, 0.03);
+  border: 1px solid rgba(139, 92, 246, 0.1);
+  border-radius: var(--radius-md);
+  margin-bottom: 0.5rem;
+  width: fit-content;
+}
+
+.metaItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.metaItem b {
+  color: var(--primary);
+  margin-left: 4px;
 }
 
 @media (max-width: 480px) {

@@ -8,6 +8,7 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredDonors, setFilteredDonors] = useState([]);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [selectedDonor, setSelectedDonor] = useState(null);
   const containerRef = useRef(null);
@@ -15,19 +16,16 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
   // Fetch initial selected donor if value exists
   useEffect(() => {
     if (value && !selectedDonor) {
-       // Ideally we should have an endpoint to get a single donor
-       // For now, we search for the specific ID or rely on the parent
        fetchDonorById(value);
     }
   }, [value]);
 
   const fetchDonorById = async (id) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/donors/`);
+      const res = await fetch(API_ENDPOINTS.DONORS.INFO(id));
       if (res.ok) {
-        const data = await res.json();
-        const found = data.find(d => d.id === id);
-        if (found) setSelectedDonor(found);
+        const result = await res.json();
+        if (result.status) setSelectedDonor(result.data);
       }
     } catch (err) {
       console.error(err);
@@ -47,10 +45,12 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
   const searchDonors = async (query) => {
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/donors/?search=${query}`);
+      const res = await fetch(`${API_ENDPOINTS.DONORS.BASE}?search=${encodeURIComponent(query)}&per_page=20`);
       if (res.ok) {
         const data = await res.json();
-        setFilteredDonors(data);
+        const items = data.items || [];
+        setFilteredDonors(items);
+        setHighlightedIndex(0); // Reset highlighted to top on every search
       }
     } catch (err) {
       console.error("Search error:", err);
@@ -80,6 +80,24 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
     }
     setIsOpen(false);
     setSearchTerm('');
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      if (filteredDonors.length > 0) {
+        handleSelect(filteredDonors[highlightedIndex]);
+      } else if (searchTerm === '') {
+        setIsOpen(false);
+      }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedIndex(prev => Math.min(prev + 1, filteredDonors.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedIndex(prev => Math.max(prev - 1, 0));
+    } else if (e.key === 'Escape') {
+      setIsOpen(false);
+    }
   };
 
   const handleClear = (e) => {
@@ -124,28 +142,36 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
               placeholder="Type to filter..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={handleKeyDown}
               autoFocus
               onClick={(e) => e.stopPropagation()}
             />
           </div>
           <div className={styles.list}>
-            <div 
-              className={`${styles.item} ${!value ? styles.itemSelected : ''}`}
-              onClick={() => handleSelect(null)}
-            >
-              <div className={styles.itemInfo}>
-                <span className={styles.name}>All Donors</span>
-                <span className={styles.details}>Show results for everyone</span>
+            {searchTerm === '' && (
+              <div 
+                className={`${styles.item} ${!value ? styles.itemSelected : ''}`}
+                onClick={() => handleSelect(null)}
+              >
+                <div className={styles.itemInfo}>
+                  <span className={styles.name}>All Donors</span>
+                  <span className={styles.details}>Show results for everyone</span>
+                </div>
+                {!value ? <Check size={16} className={styles.checkIcon} /> : null}
               </div>
-              {!value && <Check size={16} className={styles.checkIcon} />}
-            </div>
+            )}
 
             {filteredDonors.length > 0 ? (
-              filteredDonors.map((donor) => (
+              filteredDonors.map((donor, idx) => (
                 <div 
                   key={donor.id} 
-                  className={`${styles.item} ${value === donor.id ? styles.itemSelected : ''}`}
+                  className={`
+                    ${styles.item} 
+                    ${value === donor.id ? styles.itemSelected : ''} 
+                    ${highlightedIndex === idx ? styles.itemHighlighted : ''}
+                  `}
                   onClick={() => handleSelect(donor)}
+                  onMouseEnter={() => setHighlightedIndex(idx)}
                 >
 
                   <div className={styles.itemInfo}>

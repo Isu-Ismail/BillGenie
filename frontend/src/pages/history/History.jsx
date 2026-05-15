@@ -34,8 +34,11 @@ const History = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [itemsPerRow, setItemsPerRow] = useState(3);
-  const [trusts, setTrusts] = useState([]);
-  const [filters, setFilters] = useState({ ...lastFilters, year_only: false, trust_id: '' });
+  const [trusts, setTrusts] = useState(() => {
+    const saved = sessionStorage.getItem('history_cached_trusts');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [filters, setFilters] = useState({ ...lastFilters });
   
   // Edit Modal State
   const [editModal, setEditModal] = useState({ show: false, transaction: null });
@@ -43,9 +46,12 @@ const History = () => {
 
   const fetchTrusts = async () => {
     try {
-      const res = await fetch(API_ENDPOINTS.TRUSTS.BASE);
+      // Fetch all trusts for the filter dropdown
+      const res = await fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=20`);
       const data = await res.json();
-      setTrusts(data);
+      const items = data.items || [];
+      setTrusts(items);
+      sessionStorage.setItem('history_cached_trusts', JSON.stringify(items));
     } catch (err) {
       console.error("Fetch trusts failed:", err);
     }
@@ -58,8 +64,10 @@ const History = () => {
       setItemsPerRow(cols);
 
       if (categories.length === 0) await fetchCategories();
-      await fetchTrusts();
-      if (!hasLoadedOnce) {
+      if (trusts.length === 0) await fetchTrusts();
+      
+      // If we haven't loaded anything and have no cache, do first fetch
+      if (!hasLoadedOnce && transactions.length === 0) {
         await fetchTransactions(1, true, cols * 3);
         setHasLoadedOnce(true);
       }
@@ -105,8 +113,12 @@ const History = () => {
 
   const fetchCategories = async () => {
     try {
-      const res = await fetch(API_ENDPOINTS.CATEGORIES.BASE);
-      if (res.ok) setCategories(await res.json());
+      // Fetch all categories for display/lookup
+      const res = await fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=20`);
+      if (res.ok) {
+        const data = await res.json();
+        setCategories(data.items || []);
+      }
     } catch (err) { console.error(err); }
   };
 

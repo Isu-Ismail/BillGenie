@@ -1,0 +1,317 @@
+.sectionCard {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: 2rem;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px dashed var(--border);
+}
+
+.titleGroup {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.iconBox {
+  background: var(--primary-light);
+  color: var(--primary);
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.titleGroup h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-main);
+}
+
+.titleGroup p {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+}
+
+.addPrimaryBtn {
+  background: var(--primary);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.streetGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+
+.categoryCard {
+  background: var(--bg-main);
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.2s;
+}
+
+.categoryCard:hover {
+  border-color: var(--primary);
+  background: var(--bg-card);
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  padding: 0 1rem;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  width: 300px;
+  height: 44px; /* MATCH BUTTON HEIGHT */
+  transition: all 0.2s;
+}
+
+.searchBox input::-ms-clear,
+.searchBox input::-ms-reveal {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.searchBox input::-webkit-search-decoration,
+.searchBox input::-webkit-search-cancel-button,
+.searchBox input::-webkit-search-results-button,
+.searchBox input::-webkit-search-results-decoration {
+  display: none;
+}
+
+.searchBox:focus-within {
+  border-color: var(--primary);
+  box-shadow: none; /* REMOVE PURPLE RING */
+}
+
+.searchBox input {
+  background: none;
+  border: none;
+  color: var(--text-main);
+  font-size: 0.95rem;
+  width: 100%;
+  outline: none;
+  padding: 8px 0;
+  line-height: 1.4;
+}
+
+.searchBox input:focus {
+  box-shadow: none; /* REMOVE INNER PURPLE RING */
+}
+
+.streetInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.catName {
+  font-weight: 700;
+  color: var(--text-main);
+  font-size: 0.9rem;
+}
+
+.description {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.catActions {
+  display: flex;
+  gap: 8px;
+}
+
+.editBtn, .deleteBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.editBtn { color: var(--text-muted); }
+.editBtn:hover { color: var(--primary); }
+
+.deleteBtn { color: var(--text-muted); }
+.deleteBtn:hover { color: #ef4444; }
+
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.modal {
+  background: var(--bg-card);
+  width: 95%;
+  max-width: 500px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: 2rem;
+  box-shadow: var(--shadow-lg);
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.modalHeader h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.modalHeader button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.modalBody {
+  margin-bottom: 2rem;
+}
+
+.modalForm {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inputGroup label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.inputGroup input {
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-md);
+  outline: none;
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+.saveBtn {
+  background: var(--primary);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cancelBtn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.loadMoreWrapper {
+  display: flex;
+  justify-content: center;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px dashed var(--border);
+}
+
+.loadMoreBtn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  padding: 0.75rem 2rem;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.2s;
+}
+
+.loadMoreBtn:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--bg-main);
+}
+
+.loadMoreBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

@@ -8,7 +8,7 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
-@router.post("/login")
+@router.post("/login/")
 async def login(credentials: LoginRequest):
     try:
         # Authenticate with PocketBase using the 'users' collection

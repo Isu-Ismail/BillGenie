@@ -1,0 +1,348 @@
+.donorCard {
+  background: var(--bg-card);
+  border-radius: 24px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+  animation: slideUp 0.5s ease-out;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.collapsed {
+  margin-bottom: 1rem;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.cardHeader {
+  padding: 1.25rem 1.5rem;
+  background: linear-gradient(to right, rgba(139, 92, 246, 0.05), transparent);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chevron {
+  color: var(--text-muted);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chevron.open {
+  transform: rotate(180deg);
+}
+
+.collapsedSummary {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--primary);
+  margin-left: 8px;
+}
+
+.removeDonor {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  opacity: 0.5;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  display: flex;
+  align-items: center;
+}
+
+.removeDonor:hover {
+  opacity: 1;
+}
+
+.cardTitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.index {
+  background: var(--primary);
+  color: white;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.donorGrid {
+  display: grid;
+  grid-template-columns: 2.2fr 1.8fr 0.8fr 1.2fr;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  align-items: flex-end;
+}
+
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inputGroup label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 2px;
+}
+
+.inlineAddBtn {
+  background: transparent;
+  border: none;
+  color: var(--primary);
+  font-weight: 800;
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inputGroup select, 
+.inputGroup input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  font-size: 0.9rem;
+  height: 40px;
+  transition: all 0.2s;
+  box-sizing: border-box;
+}
+
+.inputGroup select:focus, 
+.inputGroup input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.1);
+  outline: none;
+}
+
+.categoriesSection {
+  padding: 1.5rem;
+  background: var(--bg-main);
+  border-top: 1px solid var(--border);
+}
+
+.worksheetGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.worksheetRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.worksheetLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 28px;
+}
+
+.compactSelect {
+  flex: 1;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  font-size: 0.8rem;
+  height: 32px;
+  outline: none;
+  margin-right: 8px;
+}
+
+.worksheetInputGroup {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.currency {
+  position: absolute;
+  left: 1rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--primary);
+  pointer-events: none;
+}
+
+.worksheetInputGroup input {
+  width: 100%;
+  padding: 0.75rem 1rem 0.75rem 2rem !important;
+  border-radius: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  font-weight: 600;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.worksheetInputGroup input:focus {
+  border-color: var(--primary);
+  background: white;
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.1);
+}
+
+.categoryActions {
+  grid-column: span 4;
+  display: flex;
+  gap: 12px;
+  margin-top: 0.5rem;
+}
+
+.addCustomBtn {
+  flex: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 1rem;
+  background: rgba(139, 92, 246, 0.05);
+  border: 1px dashed var(--primary);
+  border-radius: 12px;
+  color: var(--primary);
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  justify-content: center;
+}
+
+.clearFieldsBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 1rem;
+  background: rgba(239, 68, 68, 0.05);
+  border: 1px dashed #ef4444;
+  border-radius: 12px;
+  color: #ef4444;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  justify-content: center;
+}
+
+.addCustomBtn:hover {
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.clearFieldsBtn:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.removeTiny {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  opacity: 0.5;
+}
+
+.cardFooter {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.totalDisplay {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.totalDisplay span:first-child {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.totalAmount {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--primary);
+  font-family: var(--font-mono, monospace);
+}
+
+/* Responsive Grid Adjustments */
+@media (max-width: 1440px) {
+  .worksheetGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .categoryActions {
+    grid-column: span 3;
+  }
+}
+
+@media (max-width: 1024px) {
+  .worksheetGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .categoryActions {
+    grid-column: span 2;
+  }
+  .donorGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .worksheetGrid {
+    grid-template-columns: 1fr;
+  }
+  .categoryActions {
+    grid-column: span 1;
+    flex-direction: column;
+  }
+  .donorGrid {
+    grid-template-columns: 1fr;
+  }
+  .totalDisplay {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

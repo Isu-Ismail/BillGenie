@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, File, UploadFile, Form
 from pydantic import BaseModel
 from typing import List, Optional
-from db import pb
+from db import pb, escape_pb_filter
 import pandas as pd
 import io
 from datetime import datetime
@@ -25,102 +25,98 @@ class NewEntryRequest(BaseModel):
     trust_id: Optional[str] = None
     trust_name: Optional[str] = None
 
-@router.post("/create")
-async def create_new_entry(entry: NewEntryRequest):
+from typing import List, Optional, Union
+
+# ... (models stay the same)
+
+@router.post("/create/")
+async def create_new_entry(request_data: Union[NewEntryRequest, List[NewEntryRequest]]):
     try:
-        # 0. Handle Trust (Find by ID, Find by Name, or Create by Name)
-        trust_id = entry.trust_id
-        
-        # If ID is missing but Name is provided, try to find or create
-        if not trust_id and entry.trust_name:
-            trust_name_clean = entry.trust_name.strip()
-            # Search for existing trust by name
-            existing_trusts = pb.collection('trusts').get_list(1, 1, {
-                "filter": f'name = "{trust_name_clean}"'
-            })
-            
-            if existing_trusts.items:
-                trust_id = existing_trusts.items[0].id
-            else:
-                # Create new trust
-                try:
+        # Normalize to a list even if a single object was sent
+        entries = request_data if isinstance(request_data, list) else [request_data]
+        results = []
+
+        for entry in entries:
+            # 0. Handle Trust
+            trust_id = entry.trust_id
+            if not trust_id and entry.trust_name:
+                trust_name_clean = entry.trust_name.strip()
+                existing_trusts = pb.collection('trusts').get_list(1, 1, {
+                    "filter": f'name = "{escape_pb_filter(trust_name_clean)}"'
+                })
+                if existing_trusts.items:
+                    trust_id = existing_trusts.items[0].id
+                else:
                     new_trust = pb.collection('trusts').create({"name": trust_name_clean})
                     trust_id = new_trust.id
-                    print(f"Auto-created trust: {trust_name_clean}")
-                except Exception as e:
-                    print(f"Error auto-creating trust: {e}")
 
-        # Fallback to first trust if still not specified
-        if not trust_id:
-            trusts = pb.collection('trusts').get_list(1, 1)
-            if trusts.items:
-                trust_id = trusts.items[0].id
+            if not trust_id:
+                trusts = pb.collection('trusts').get_list(1, 1)
+                if trusts.items: trust_id = trusts.items[0].id
 
-        # 1. Search for an existing transaction for this donor in the same Hijri year AND Trust
-        filter_str = f'donor_id = "{entry.donor_id}" && hijri_year = "{entry.hijri_year}" && trust_id = "{trust_id}"'
+            # 1. Search for existing transaction
+            d_id = escape_pb_filter(entry.donor_id)
+            h_year = escape_pb_filter(entry.hijri_year)
+            t_id = escape_pb_filter(trust_id)
+            filter_str = f'donor_id = "{d_id}" && hijri_year = "{h_year}" && trust_id = "{t_id}"'
+            existing = pb.collection('transactions').get_list(1, 1, query_params={"filter": filter_str})
+            
+            new_items = [
+                {
+                    "category_id": item.category_id, 
+                    "amount": item.amount,
+                    "date": entry.payment_date 
+                } for item in entry.items
+            ]
 
-        existing = pb.collection('transactions').get_list(1, 1, query_params={"filter": filter_str})
+            if existing.items:
+                # UPDATE
+                transaction = existing.items[0]
+                updated_items = (transaction.items or []) + new_items
+                updated_total = transaction.total_amount + entry.total_amount
+                
+                pb.collection('transactions').update(transaction.id, {
+                    "items": updated_items,
+                    "total_amount": updated_total,
+                    "payment_date": entry.payment_date,
+                    "notes": (transaction.notes + " | " + entry.notes).strip(" | ") if entry.notes else transaction.notes
+                })
+                results.append({"status": "updated", "id": transaction.id})
+            else:
+                # CREATE
+                transaction_data = {
+                    "donor_id": entry.donor_id,
+                    "hijri_year": entry.hijri_year,
+                    "payment_date": entry.payment_date,
+                    "total_amount": entry.total_amount,
+                    "notes": entry.notes,
+                    "items": new_items,
+                    "trust_id": trust_id
+                }
+                transaction = pb.collection('transactions').create(transaction_data)
+                results.append({"status": "created", "id": transaction.id})
         
-        new_items = [
-            {
-                "category_id": item.category_id, 
-                "amount": item.amount,
-                "date": entry.payment_date # Individual date for this batch of items
-            } for item in entry.items
-        ]
-
-        if existing.items:
-            # UPDATE EXISTING TRANSACTION
-            transaction = existing.items[0]
-            current_items = transaction.items or []
-            updated_items = current_items + new_items
-            updated_total = transaction.total_amount + entry.total_amount
-            
-            pb.collection('transactions').update(transaction.id, {
-                "items": updated_items,
-                "total_amount": updated_total,
-                "payment_date": entry.payment_date, # Keep track of the 'latest' payment date
-                "notes": (transaction.notes + " | " + entry.notes).strip(" | ") if entry.notes else transaction.notes
-            })
-            
-            return {
-                "status": "success", 
-                "message": "Appended to existing transaction", 
-                "transaction_id": transaction.id
-            }
-        else:
-            # CREATE NEW TRANSACTION
-            transaction_data = {
-                "donor_id": entry.donor_id,
-                "hijri_year": entry.hijri_year,
-                "payment_date": entry.payment_date,
-                "total_amount": entry.total_amount,
-                "notes": entry.notes,
-                "items": new_items,
-                "trust_id": trust_id
-            }
-            transaction = pb.collection('transactions').create(transaction_data)
-
-            return {
-                "status": "success", 
-                "message": "New transaction created", 
-                "transaction_id": transaction.id
-            }
+        return {"status": "success", "processed": len(results), "results": results}
 
     except Exception as e:
-        print(f"Error creating/updating entry: {e}")
+        print(f"Error processing entries: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/import-excel")
+
+@router.post("/import-excel/")
 async def import_excel(
     file: UploadFile = File(...),
-    trust_id: str = Form(...),
+    trust_id: Optional[str] = Form(None),
     hijri_year: str = Form(...)
 ):
     try:
+        print(f"📥 Received Excel upload: {file.filename}")
         # Read the Excel file
         contents = await file.read()
+        print(f"📊 File size: {len(contents)} bytes")
+        
         df = pd.read_excel(io.BytesIO(contents))
+        print(f"✅ Excel read successfully. Columns: {df.columns.tolist()}")
         
         if df.empty:
             raise HTTPException(status_code=400, detail="The uploaded Excel file is empty.")
@@ -192,8 +188,21 @@ async def import_excel(
                             print(f"Auto-created trust: {excel_trust_name}")
                         except Exception as e: print(f"Error creating trust {excel_trust_name}: {e}")
 
+                # Final fallback for Trust
+                if not row_trust_id:
+                    if "GENERAL" in trust_map:
+                        row_trust_id = trust_map["GENERAL"]
+                    else:
+                        try:
+                            new_gen_trust = pb.collection('trusts').create({"name": "General"})
+                            row_trust_id = new_gen_trust.id
+                            trust_map["GENERAL"] = row_trust_id
+                        except: pass
+
                 # b. Find or Create/Update Donor
-                donor_filter = f'name = "{name}" && door_no = "{door_no}"'
+                n = escape_pb_filter(name)
+                dn = escape_pb_filter(door_no)
+                donor_filter = f'name = "{n}" && door_no = "{dn}"'
                 existing_donors = pb.collection('donors').get_list(1, 1, {"filter": donor_filter})
                 
                 donor_data = {
@@ -231,7 +240,10 @@ async def import_excel(
                 if not items: continue
 
                 # d. Create or Append Transaction
-                trans_filter = f'donor_id = "{donor_id}" && hijri_year = "{row_hijri_year}" && trust_id = "{row_trust_id}"'
+                d_id = escape_pb_filter(donor_id)
+                rh_year = escape_pb_filter(row_hijri_year)
+                rt_id = escape_pb_filter(row_trust_id)
+                trans_filter = f'donor_id = "{d_id}" && hijri_year = "{rh_year}" && trust_id = "{rt_id}"'
                 existing_trans = pb.collection('transactions').get_list(1, 1, {"filter": trans_filter})
 
                 if existing_trans.items:
@@ -272,4 +284,4 @@ async def import_excel(
         print(f"Excel Import Error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
-
+

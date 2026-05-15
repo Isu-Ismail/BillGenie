@@ -10,7 +10,8 @@ import {
   Building2,
   PieChart,
   Loader2,
-  RefreshCcw
+  RefreshCcw,
+  Shield
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -20,10 +21,19 @@ import { API_ENDPOINTS } from '../../api';
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [statsData, setStatsData] = useState(null);
-  const [trusts, setTrusts] = useState([]);
-  const [categories, setCategories] = useState([]);
+  const [statsData, setStatsData] = useState(() => {
+    const saved = sessionStorage.getItem('dashboard_cached_stats');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [loading, setLoading] = useState(!statsData);
+  const [trusts, setTrusts] = useState(() => {
+    const saved = sessionStorage.getItem('dashboard_cached_trusts');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [categories, setCategories] = useState(() => {
+    const saved = sessionStorage.getItem('dashboard_cached_categories');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [filters, setFilters] = useState({ 
     trust_id: sessionStorage.getItem('dashboard_selected_trust') || '', 
     hijri_year: sessionStorage.getItem('dashboard_selected_year') || '' 
@@ -34,22 +44,32 @@ const Dashboard = () => {
     sessionStorage.setItem('dashboard_selected_year', filters.hijri_year);
   }, [filters.trust_id, filters.hijri_year]);
 
-
-
   const fetchInitialData = async () => {
     try {
       const [tRes, cRes] = await Promise.all([
-        fetch(API_ENDPOINTS.TRUSTS.BASE),
-        fetch(API_ENDPOINTS.CATEGORIES.BASE)
+        fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=100`),
+        fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=100`)
       ]);
-      setTrusts(await tRes.json());
-      setCategories(await cRes.json());
+      const tData = await tRes.json();
+      const cData = await cRes.json();
+      const trustList = tData.items || [];
+      const categoryList = cData.items || [];
+      setTrusts(trustList);
+      setCategories(categoryList);
+      
+      sessionStorage.setItem('dashboard_cached_trusts', JSON.stringify(trustList));
+      sessionStorage.setItem('dashboard_cached_categories', JSON.stringify(categoryList));
+
+      if (!filters.trust_id && trustList.length > 0) {
+        setFilters(prev => ({ ...prev, trust_id: trustList[0].id }));
+      }
     } catch (err) {
       console.error("Failed to fetch initial dashboard data:", err);
     }
   };
 
   const fetchStats = async () => {
+    if (!filters.trust_id) return;
     setLoading(true);
     try {
       let url = `${API_ENDPOINTS.STATS.BASE}?`;
@@ -57,10 +77,14 @@ const Dashboard = () => {
       if (filters.hijri_year) url += `hijri_year=${filters.hijri_year}`;
       
       const res = await fetch(url);
-
       const data = await res.json();
       if (data.status) {
-        setStatsData(data);
+        if (data.needs_refresh) {
+          await handleManualRefresh();
+        } else {
+          setStatsData(data);
+          sessionStorage.setItem('dashboard_cached_stats', JSON.stringify(data));
+        }
       }
     } catch (err) {
       console.error("Failed to fetch dashboard stats:", err);
@@ -69,10 +93,40 @@ const Dashboard = () => {
     }
   };
 
+  const handleManualRefresh = async () => {
+    setLoading(true);
+    try {
+      let url = `${API_ENDPOINTS.STATS.REFRESH}?`;
+      if (filters.trust_id) url += `trust_id=${filters.trust_id}&`;
+      if (filters.hijri_year) url += `hijri_year=${filters.hijri_year}`;
+      
+      const res = await fetch(url, { method: 'POST' });
+      const data = await res.json();
+      if (data.status) {
+        setStatsData(data);
+        sessionStorage.setItem('dashboard_cached_stats', JSON.stringify(data));
+      }
+    } catch (err) {
+      console.error("Manual refresh failed:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetchInitialData();
-    fetchStats();
-  }, []);
+    const init = async () => {
+      // 1. Fetch master data if missing
+      if (trusts.length === 0 || categories.length === 0) {
+        await fetchInitialData();
+      }
+      
+      // 2. Fetch stats if we don't have them for the CURRENT filters
+      if (!statsData && filters.trust_id) {
+        await fetchStats();
+      }
+    };
+    init();
+  }, [filters.trust_id, filters.hijri_year]);
 
 
   const getCategoryName = (id) => {
@@ -108,7 +162,6 @@ const Dashboard = () => {
             value={filters.trust_id}
             onChange={(e) => setFilters({...filters, trust_id: e.target.value})}
           >
-            <option value="">All Organizations</option>
             {trusts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
           <input 
@@ -118,12 +171,29 @@ const Dashboard = () => {
             value={filters.hijri_year}
             onChange={(e) => setFilters({...filters, hijri_year: e.target.value})}
           />
-          <button className={styles.primaryBtn} onClick={fetchStats} disabled={loading}>
+          <button className={styles.primaryBtn} onClick={handleManualRefresh} disabled={loading}>
             <RefreshCcw size={18} className={loading ? styles.spin : ''} /> 
             {loading ? 'Updating...' : 'Update Stats'}
           </button>
         </div>
       </header>
+
+      {statsData?.last_generated && (
+        <div className={styles.metaBar}>
+          <div className={styles.metaItem}>
+            <TrendingUp size={14} />
+            <span>Last Generated: <b>{statsData.last_generated}</b></span>
+          </div>
+          <div className={styles.metaItem}>
+            <Shield size={14} />
+            <span>Trust: <b>{trusts.find(t => t.id === filters.trust_id)?.name || 'All Organizations'}</b></span>
+          </div>
+          <div className={styles.metaItem}>
+            <Calendar size={14} />
+            <span>Year: <b>{filters.hijri_year || 'All Time'}</b></span>
+          </div>
+        </div>
+      )}
 
 
       <div className={styles.statsGrid}>
