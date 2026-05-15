@@ -48,8 +48,26 @@ async def list_trusts(
         matches = process.extract(search, choices, scorer=fuzz.WRatio, limit=100)
         
         items = []
+        seen_ids = set()
+        
+        # 1. Add Exact Substring Matches first (higher priority)
+        query_lower = search.lower()
+        for r in all_trusts:
+            if query_lower in r.name.lower() or query_lower in getattr(r, 'address', '').lower():
+                items.append({
+                    "id": r.id,
+                    "name": r.name,
+                    "address": getattr(r, 'address', ''),
+                    "mobile": getattr(r, 'mobile', ''),
+                    "email": getattr(r, 'email', ''),
+                    "category_ids": getattr(r, 'category_ids', []),
+                    "score": 100
+                })
+                seen_ids.add(r.id)
+
+        # 2. Add Fuzzy Matches
         for match_text, score, tid in matches:
-            if score > 45:
+            if tid not in seen_ids and score > 45:
                 r = trust_map[tid]
                 items.append({
                     "id": r.id,
@@ -60,6 +78,7 @@ async def list_trusts(
                     "category_ids": getattr(r, 'category_ids', []),
                     "score": score
                 })
+                seen_ids.add(tid)
         
         start = (page - 1) * per_page
         end = start + per_page
@@ -82,8 +101,16 @@ async def create_trust(trust: TrustRequest):
         data = trust.dict()
         data["name"] = data["name"].upper() # FORCE UPPERCASE
         record = pb.collection('trusts').create(data)
-        print(f"DEBUG: Trust created with ID: {record.id}")
-        return {"status": True, "msg": "Trust created successfully", "id": record.id}
+        return {
+            "status": True, 
+            "msg": "Trust created successfully", 
+            "id": record.id,
+            "name": record.name,
+            "address": getattr(record, 'address', ''),
+            "mobile": getattr(record, 'mobile', ''),
+            "email": getattr(record, 'email', ''),
+            "category_ids": getattr(record, 'category_ids', [])
+        }
     except Exception as e:
         print(f"ERROR creating trust: {e}")
         return {"status": False, "msg": str(e)}
@@ -117,7 +144,16 @@ async def update_trust(trust_id: str, trust: TrustRequest):
         data = trust.dict()
         data["name"] = data["name"].upper() # FORCE UPPERCASE
         record = pb.collection('trusts').update(trust_id, data)
-        return {"status": True, "msg": "Trust updated successfully", "id": record.id}
+        return {
+            "status": True, 
+            "msg": "Trust updated successfully", 
+            "id": record.id,
+            "name": record.name,
+            "address": getattr(record, 'address', ''),
+            "mobile": getattr(record, 'mobile', ''),
+            "email": getattr(record, 'email', ''),
+            "category_ids": getattr(record, 'category_ids', [])
+        }
     except Exception as e:
         print(f"ERROR updating trust: {e}")
         return {"status": False, "msg": str(e)}

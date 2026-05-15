@@ -31,7 +31,7 @@ const Entry = () => {
 
 
   const [trusts, setTrusts] = useState(() => {
-    const saved = sessionStorage.getItem('entry_cached_trusts');
+    const saved = sessionStorage.getItem('global_cached_trusts');
     return saved ? JSON.parse(saved) : [];
   });
   const [categories, setCategories] = useState(() => {
@@ -41,14 +41,18 @@ const Entry = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (trusts.length === 0 || categories.length === 0) {
-      fetchData();
-    }
-    
-    // If we have a pre-filled trust, fetch its categories
-    if (entries[0]?.trust_id) {
-      fetchGroupedCategories(entries[0].trust_id, 0);
-    }
+    const init = async () => {
+      // 1. Fetch master data if missing
+      if (trusts.length === 0 || categories.length === 0) {
+        await fetchData();
+      }
+      
+      // 2. Fetch categories for the pre-filled trust
+      if (entries[0]?.trust_id) {
+        fetchGroupedCategories(entries[0].trust_id, 0);
+      }
+    };
+    init();
   }, []);
 
   const [message, setMessage] = useState({ type: '', text: '' });
@@ -113,7 +117,7 @@ const Entry = () => {
     donor_id: '',
     trust_id: getPrefilledValue('trust_id'),
     hijri_year: getPrefilledValue('hijri_year'),
-    payment_date: new Date().toISOString().split('T')[0],
+    payment_date: getPrefilledValue('payment_date', new Date().toISOString().split('T')[0]),
     notes: '',
     items: [{ ...emptyItem }],
     showNewTrust: false,
@@ -154,13 +158,11 @@ const Entry = () => {
     if (entries[0]) {
       if (entries[0].trust_id) localStorage.setItem('entry_prefill_trust_id', entries[0].trust_id);
       if (entries[0].hijri_year) localStorage.setItem('entry_prefill_hijri_year', entries[0].hijri_year);
+      if (entries[0].payment_date) localStorage.setItem('entry_prefill_payment_date', entries[0].payment_date);
     }
-  }, [entries[0]?.trust_id, entries[0]?.hijri_year]);
+  }, [entries[0]?.trust_id, entries[0]?.hijri_year, entries[0]?.payment_date]);
 
-  // Fetch real data from API
-  useEffect(() => {
-    fetchData();
-  }, []);
+
 
   const getTrustCategoryCache = () => {
     const saved = sessionStorage.getItem('entry_trust_category_cache');
@@ -228,7 +230,7 @@ const Entry = () => {
     try {
       const [catRes, trustRes] = await Promise.all([
         fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=100`),
-        fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=100`)
+        fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=20`)
       ]);
       
       if (catRes.ok) {
@@ -242,7 +244,7 @@ const Entry = () => {
         const trustData = await trustRes.json();
         const trustList = trustData.items || [];
         setTrusts(trustList);
-        sessionStorage.setItem('entry_cached_trusts', JSON.stringify(trustList));
+        sessionStorage.setItem('global_cached_trusts', JSON.stringify(trustList));
         
         // Auto-select first trust if none selected
         if (trustList.length > 0 && !entries[0].trust_id) {
@@ -581,7 +583,15 @@ const Entry = () => {
       }
 
       setMessage({ type: 'success', text: 'All entries saved successfully!' });
-      setEntries([{ ...emptyDonorEntry }]);
+      
+      // Reset to a fresh entry but keep pre-filled values
+      const freshEntry = { ...emptyDonorEntry };
+      setEntries([freshEntry]);
+      
+      // CRITICAL: Re-fetch categories for the pre-filled trust so the form isn't empty
+      if (freshEntry.trust_id) {
+        fetchGroupedCategories(freshEntry.trust_id, 0);
+      }
     } catch (error) {
       setMessage({ type: 'error', text: error.message });
     } finally {

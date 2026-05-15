@@ -45,6 +45,7 @@ const DonorsTab = ({ onConfirmDelete }) => {
       const totalPages = Math.ceil(lastPage.total / lastPage.per_page);
       return lastPage.page < totalPages ? lastPage.page + 1 : undefined;
     },
+    staleTime: 1000 * 60 * 5, // 5 minutes cache
   });
 
   // Subscribe to real-time updates
@@ -54,6 +55,12 @@ const DonorsTab = ({ onConfirmDelete }) => {
     });
     return () => unsubscribe();
   }, [queryClient]);
+
+  const updateGlobalDonorCache = () => {
+    // Note: DonorSearch.jsx currently fetches by search term rather than a global list,
+    // but we clear any specific cached items if they exist to force a refresh.
+    sessionStorage.removeItem('entry_last_searched_donors');
+  };
 
   const handleSave = async () => {
     if (!editModal.data || !editModal.data.name.trim()) return;
@@ -69,6 +76,7 @@ const DonorsTab = ({ onConfirmDelete }) => {
         body: JSON.stringify(editModal.data)
       });
       if (response.ok) {
+        updateGlobalDonorCache();
         setEditModal({ isOpen: false, mode: 'create', data: null });
         queryClient.invalidateQueries({ queryKey: ['donors'] });
       }
@@ -86,6 +94,7 @@ const DonorsTab = ({ onConfirmDelete }) => {
         try {
           const res = await fetch(API_ENDPOINTS.DONORS.DETAIL(id), { method: 'DELETE' });
           if (res.ok) {
+            updateGlobalDonorCache();
             queryClient.invalidateQueries({ queryKey: ['donors'] });
           }
         } catch (err) {

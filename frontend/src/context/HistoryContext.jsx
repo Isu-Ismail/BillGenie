@@ -17,7 +17,7 @@ export const HistoryProvider = ({ children }) => {
     const [pagination, setPagination] = useState(null);
     const [lastFilters, setLastFilters] = useState(() => {
         const saved = sessionStorage.getItem('history_last_filters');
-        return saved ? JSON.parse(saved) : { donor_id: '', hijri_year: '', all_user_tx: false, trust_id: '', year_only: false };
+        return saved ? JSON.parse(saved) : { donor_id: '', hijri_year: '', all_user_tx: false, trust_id: '', year_only: false, street: '' };
     });
 
     const setTransactionsPersistent = (txs) => {

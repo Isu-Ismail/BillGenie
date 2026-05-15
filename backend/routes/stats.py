@@ -8,12 +8,19 @@ router = APIRouter()
 @router.get("/")
 async def get_dashboard_stats(trust_id: Optional[str] = None, hijri_year: Optional[str] = None):
     try:
-        cached = get_cached_data(trust_id, "STATS", hijri_year)
-        if cached:
+        filters_dict = {"trust_id": trust_id, "hijri_year": hijri_year}
+        
+        # If no specific filters, get LATEST stats
+        is_latest = not trust_id or not hijri_year
+        
+        cached_value, cached_fields = get_cached_data("STATS", None if is_latest else filters_dict)
+        
+        if cached_value:
             return {
                 "status": True,
                 "from_cache": True,
-                **cached
+                "filters": cached_fields,
+                **cached_value
             }
 
         # If no cache exists, return empty structure with needs_refresh=True
@@ -37,11 +44,13 @@ async def refresh_stats(trust_id: Optional[str] = None, hijri_year: Optional[str
         stats_data = await calculate_fresh_stats(trust_id, hijri_year)
         
         # Save to metadata cache
-        cached_data = update_cached_data(trust_id, "STATS", stats_data, hijri_year)
+        filters_dict = {"trust_id": trust_id, "hijri_year": hijri_year}
+        cached_data = update_cached_data("STATS", stats_data, filters_dict)
         
         return {
             "status": True,
             "msg": "Dashboard stats updated successfully",
+            "filters": filters_dict,
             **cached_data
         }
     except Exception as e:

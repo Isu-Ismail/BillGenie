@@ -17,14 +17,16 @@
 
 .actions {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 1rem;
+  /* Override the unified select background for Dashboard only */
+  --select-bg: var(--bg-card);
 }
 
 .primaryBtn {
   background: var(--primary);
   color: white;
-  height: 42px;
+  height: 40px;
   padding: 0 1.5rem;
   border-radius: var(--radius-md);
   display: flex;
@@ -35,6 +37,8 @@
   cursor: pointer;
   border: none;
   transition: all 0.2s ease;
+  white-space: nowrap; /* Single line */
+  flex-shrink: 0;
 }
 
 .primaryBtn:hover:not(:disabled) {
@@ -46,7 +50,7 @@
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text-main);
-  height: 42px;
+  height: 40px;
   padding: 0 1.5rem;
   border-radius: var(--radius-md);
   display: flex;
@@ -57,13 +61,13 @@
 }
 
 .trustFilter, .yearInput {
-  background: var(--bg-card);
+  background: var(--bg-card); /* White for dashboard */
   border: 1px solid var(--border);
   color: var(--text-main);
-  height: 42px;
+  height: 40px;
   padding: 0 12px;
-  border-radius: var(--radius-md);
-  font-size: 0.85rem;
+  border-radius: 10px;
+  font-size: 0.9rem;
   outline: none;
   transition: border-color 0.2s ease;
 }

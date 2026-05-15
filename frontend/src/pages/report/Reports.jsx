@@ -8,13 +8,17 @@ import {
   FileSpreadsheet,
   Loader2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Shield,
   TrendingUp,
-  MapPin
+  MapPin,
+  PieChart
 } from 'lucide-react';
 
 import ExcelJS from 'exceljs';
 import styles from './Reports.module.css';
+import TrustSelect from '../entry/TrustSelect';
 import { API_ENDPOINTS } from '../../api';
 
 const Reports = () => {
@@ -27,7 +31,7 @@ const Reports = () => {
     return saved ? JSON.parse(saved) : [];
   });
   const [trusts, setTrusts] = useState(() => {
-    const saved = sessionStorage.getItem('reports_cached_trusts_list');
+    const saved = sessionStorage.getItem('global_cached_trusts');
     return saved ? JSON.parse(saved) : [];
   });
   const [summary, setSummary] = useState(() => {
@@ -50,62 +54,91 @@ const Reports = () => {
     return saved ? JSON.parse(saved) : [];
   });
   
+  const [fromDate, setFromDate] = useState(sessionStorage.getItem('reports_selected_from_date') || '');
+  const [toDate, setToDate] = useState(sessionStorage.getItem('reports_selected_to_date') || '');
+  
   // Dynamic states
   const [allStreets, setAllStreets] = useState(() => {
-    const saved = sessionStorage.getItem('reports_cached_streets_list');
-    return saved ? JSON.parse(saved) : [];
+    const saved = sessionStorage.getItem('global_cached_streets');
+    const parsed = saved ? JSON.parse(saved) : [];
+    // Reports needs objects {id, name}, so map strings if needed
+    return parsed.map(s => typeof s === 'string' ? { id: s, name: s } : s);
   });
   const [streetSearch, setStreetSearch] = useState('');
   const [streetPage, setStreetPage] = useState(1);
   const [hasMoreStreets, setHasMoreStreets] = useState(false);
   const [loadingStreets, setLoadingStreets] = useState(false);
   
-  const [trustSearch, setTrustSearch] = useState('');
-  const [showTrustDropdown, setShowTrustDropdown] = useState(false);
+
   
   const [allCategoriesList, setAllCategoriesList] = useState(() => {
     const saved = sessionStorage.getItem('reports_cached_all_categories');
     return saved ? JSON.parse(saved) : [];
   });
   const [categorySearch, setCategorySearch] = useState('');
+  const [categoryPage, setCategoryPage] = useState(1);
+  const [hasMoreCategories, setHasMoreCategories] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   
   const [showStreetDropdown, setShowStreetDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const lastFetchedCatTerm = React.useRef('');
   
   // Scroll control
   const filterRowRef = React.useRef(null);
   const summaryRowRef = React.useRef(null);
   const [isHoveringFilter, setIsHoveringFilter] = useState(false);
+  const hasFetched = React.useRef(false);
+
+  useEffect(() => {
+    if (hasFetched.current) return;
+    hasFetched.current = true;
+
+    const init = async () => {
+      // 1. Fetch metadata if state is empty
+      if (trusts.length === 0 || allCategoriesList.length === 0 || allStreets.length === 0) {
+        await fetchInitialData();
+      }
+
+      // 2. Load latest available report from backend cache ONLY if no local data exists
+      // This will call the endpoint WITHOUT parameters for the "Latest" cache
+      if (reportData.length === 0) {
+        await loadCachedReport(false);
+      }
+    };
+    init();
+  }, []);
 
   useEffect(() => {
     const filterRow = filterRowRef.current;
     const summaryRow = summaryRowRef.current;
 
     const createWheelHandler = (row) => (e) => {
-      if (e.deltaY !== 0) {
+      if (e.shiftKey && e.deltaY !== 0) {
+        // Shift + Vertical wheel = Horizontal scroll
         e.preventDefault();
         row.scrollLeft += e.deltaY;
       }
+      // Regular vertical wheel (e.deltaY) and horizontal wheel (e.deltaX)
+      // are handled naturally by the browser thanks to overflow-x: auto.
     };
 
-    if (filterRow) {
-      const onFilterWheel = createWheelHandler(filterRow);
-      filterRow.addEventListener('wheel', onFilterWheel, { passive: false });
-      filterRow._onWheel = onFilterWheel;
-    }
+    const filterHandler = filterRow ? createWheelHandler(filterRow) : null;
+    const summaryHandler = summaryRow ? createWheelHandler(summaryRow) : null;
 
-    if (summaryRow) {
-      const onSummaryWheel = createWheelHandler(summaryRow);
-      summaryRow.addEventListener('wheel', onSummaryWheel, { passive: false });
-      summaryRow._onWheel = onSummaryWheel;
+    if (filterRow && filterHandler) {
+      filterRow.addEventListener('wheel', filterHandler, { passive: false });
+    }
+    if (summaryRow && summaryHandler) {
+      summaryRow.addEventListener('wheel', summaryHandler, { passive: false });
     }
 
     return () => {
-      if (filterRow && filterRow._onWheel) filterRow.removeEventListener('wheel', filterRow._onWheel);
-      if (summaryRow && summaryRow._onWheel) summaryRow.removeEventListener('wheel', summaryRow._onWheel);
+      if (filterRow && filterHandler) filterRow.removeEventListener('wheel', filterHandler);
+      if (summaryRow && summaryHandler) summaryRow.removeEventListener('wheel', summaryHandler);
     };
-  }, [summary]); // Re-attach when summary (and its ref) appears
+  }, [summary, reportData]); // Re-run when report is generated/updated
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -135,17 +168,74 @@ const Reports = () => {
     sessionStorage.setItem('reports_selected_gender', selectedGender);
     sessionStorage.setItem('reports_selected_streets', JSON.stringify(selectedStreets));
     sessionStorage.setItem('reports_selected_categories', JSON.stringify(selectedCategories));
-  }, [selectedTrust, selectedTrustName, selectedYear, selectedGender, selectedStreets, selectedCategories]);
+    sessionStorage.setItem('reports_selected_from_date', fromDate);
+    sessionStorage.setItem('reports_selected_to_date', toDate);
+  }, [selectedTrust, selectedTrustName, selectedYear, selectedGender, selectedStreets, selectedCategories, fromDate, toDate]);
 
   const [lastGenerated, setLastGenerated] = useState(sessionStorage.getItem('reports_cached_last_generated') || null);
   const [reportGenerated, setReportGenerated] = useState(sessionStorage.getItem('reports_cached_generated_flag') === 'true');
 
   useEffect(() => {
-    // Only fetch initial data if cache is empty
-    if (trusts.length === 0 || allCategoriesList.length === 0 || allStreets.length === 0) {
-      fetchInitialData();
+    sessionStorage.setItem('reports_cached_last_generated', lastGenerated || '');
+    sessionStorage.setItem('reports_cached_generated_flag', reportGenerated ? 'true' : 'false');
+  }, [lastGenerated, reportGenerated]);
+
+  const loadCachedReport = async (useFilters = false) => {
+    try {
+      let url = API_ENDPOINTS.REPORTS.BASE;
+      
+      // If useFilters is true, we pass the current state to find a SPECIFIC cache.
+      // If false, we call the base endpoint to get the LATEST available report metadata.
+      if (useFilters) {
+        const trust = selectedTrust || '';
+        const year = selectedYear || '';
+        const streetParam = selectedStreets.length > 0 ? `&streets=${encodeURIComponent(selectedStreets.join(','))}` : '';
+        const genderParam = selectedGender !== 'All' ? `&gender=${selectedGender}` : '';
+        const catParam = selectedCategories.length > 0 ? `&categories=${encodeURIComponent(selectedCategories.join(','))}` : '';
+        const dateParam = (fromDate ? `&from_date=${fromDate}` : '') + (toDate ? `&to_date=${toDate}` : '');
+        url += `?trust_id=${trust}&hijri_year=${year}${genderParam}${streetParam}${catParam}${dateParam}`;
+      }
+
+      const res = await fetch(url);
+      if (res.ok) {
+        const result = await res.json();
+        if (result.from_cache) {
+          // Sync filters from the backend cache fields
+          if (result.filters) {
+            if (result.filters.trust_id) {
+              setSelectedTrust(result.filters.trust_id);
+              // Also update trust name if list is available
+              const tName = trusts.find(t => t.id === result.filters.trust_id)?.name;
+              if (tName) setSelectedTrustName(tName);
+            }
+            if (result.filters.hijri_year !== undefined) setSelectedYear(result.filters.hijri_year || '');
+            if (result.filters.gender !== undefined) setSelectedGender(result.filters.gender || 'All');
+            if (result.filters.streets !== undefined) setSelectedStreets(result.filters.streets ? result.filters.streets.split(',').filter(x => x) : []);
+            if (result.filters.categories !== undefined) setSelectedCategories(result.filters.categories ? result.filters.categories.split(',').filter(x => x) : []);
+            if (result.filters.from_date !== undefined) setFromDate(result.filters.from_date || '');
+            if (result.filters.to_date !== undefined) setToDate(result.filters.to_date || '');
+          }
+
+          setReportData(result.data);
+          setCategories(result.categories);
+          setSummary(result.summary);
+          setReportGenerated(true);
+          setLastGenerated(result.last_generated);
+
+          // Update sessionStorage
+          sessionStorage.setItem('reports_cached_data', JSON.stringify(result.data));
+          sessionStorage.setItem('reports_cached_categories', JSON.stringify(result.categories));
+          sessionStorage.setItem('reports_cached_summary', JSON.stringify(result.summary));
+          
+          return true; // Was cached
+        }
+      }
+      return false; // Not in cache
+    } catch (err) { 
+      console.error("Cache load error:", err); 
+      return false;
     }
-  }, []);
+  };
 
   // Fetch streets
   useEffect(() => {
@@ -154,19 +244,20 @@ const Reports = () => {
     }
   }, [streetSearch, streetPage, showStreetDropdown]);
 
-  // Fetch trusts
-  useEffect(() => {
-    if (showTrustDropdown) {
-      loadTrusts();
-    }
-  }, [trustSearch, showTrustDropdown]);
+
 
   // Fetch categories
   useEffect(() => {
     if (showCategoryDropdown) {
-      loadCategories();
+      if (categorySearch !== lastFetchedCatTerm.current || categoryPage > 1) {
+         // Use a timeout for the search term only
+         const timer = setTimeout(() => {
+            loadCategories();
+         }, categorySearch !== lastFetchedCatTerm.current ? 2000 : 0);
+         return () => clearTimeout(timer);
+      }
     }
-  }, [categorySearch, showCategoryDropdown]);
+  }, [categorySearch, categoryPage, showCategoryDropdown]);
 
   const loadStreets = async () => {
     setLoadingStreets(true);
@@ -182,7 +273,15 @@ const Reports = () => {
           const existingIds = new Set(base.map(s => s.id));
           const updated = [...base, ...newStreets.filter(s => !existingIds.has(s.id))];
           if (streetPage === 1 && !streetSearch) {
-             sessionStorage.setItem('reports_cached_streets_list', JSON.stringify(updated.slice(0, 20)));
+             sessionStorage.setItem('global_cached_streets', JSON.stringify(updated.map(s => s.name).slice(0, 20)));
+          } else if (streetSearch && newStreets.length > 0) {
+             // Merge search results into global cache as strings
+             const globalSaved = JSON.parse(sessionStorage.getItem('global_cached_streets') || '[]');
+             const combined = [...globalSaved];
+             newStreets.forEach(s => {
+               if (!combined.includes(s.name)) combined.push(s.name);
+             });
+             sessionStorage.setItem('global_cached_streets', JSON.stringify(combined));
           }
           return updated;
         });
@@ -191,94 +290,91 @@ const Reports = () => {
     } catch (error) { console.error(error); } finally { setLoadingStreets(false); }
   };
 
-  const loadTrusts = async () => {
-    try {
-      let url = `${API_ENDPOINTS.TRUSTS.BASE}?per_page=20`;
-      if (trustSearch) url += `&search=${encodeURIComponent(trustSearch)}`;
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        const items = data.items || [];
-        setTrusts(items);
-        if (!trustSearch) {
-          sessionStorage.setItem('reports_cached_trusts_list', JSON.stringify(items));
-        }
-      }
-    } catch (err) { console.error(err); }
-  };
+
 
   const loadCategories = async () => {
+    if (categorySearch === lastFetchedCatTerm.current && categoryPage === 1 && allCategoriesList.length > 0) return;
+    
+    setLoadingCategories(true);
     try {
-      let url = `${API_ENDPOINTS.CATEGORIES.BASE}?per_page=100`; // Standard list
+      let url = `${API_ENDPOINTS.CATEGORIES.BASE}?page=${categoryPage}&per_page=10`; 
       if (categorySearch) url += `&search=${encodeURIComponent(categorySearch)}`;
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         const items = data.items || [];
-        setAllCategoriesList(items);
-        if (!categorySearch) {
-          sessionStorage.setItem('reports_cached_all_categories', JSON.stringify(items));
-        }
+        
+        setAllCategoriesList(prev => {
+          const base = categoryPage === 1 ? [] : prev;
+          const existingIds = new Set(base.map(c => c.id));
+          const updated = [...base, ...items.filter(c => !existingIds.has(c.id))];
+          return updated;
+        });
+        
+        setHasMoreCategories(data.page < Math.ceil(data.total / data.per_page));
+        lastFetchedCatTerm.current = categorySearch;
       }
-    } catch (err) { console.error(err); }
+    } catch (err) { console.error(err); } finally { setLoadingCategories(false); }
   };
 
   const fetchInitialData = async () => {
     try {
-      const tRes = await fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=20`);
-      if (tRes.ok) {
-        const data = await tRes.json();
-        const trustList = data.items || [];
-        setTrusts(trustList);
-        sessionStorage.setItem('reports_cached_trusts_list', JSON.stringify(trustList));
-        
-        if (!selectedTrust && trustList.length > 0) {
-          setSelectedTrust(trustList[0].id);
-          setSelectedTrustName(trustList[0].name);
-        } else if (selectedTrust) {
-           const t = trustList.find(x => x.id === selectedTrust);
-           if (t) setSelectedTrustName(t.name);
-           else {
-             const tr = await fetch(`${API_ENDPOINTS.TRUSTS.BASE}/${selectedTrust}`);
-             if (tr.ok) {
-               const td = await tr.json();
-               setSelectedTrustName(td.name);
-             }
-           }
-        }
-      }
-      
-      // Also fetch first 20 categories and streets for cache
-      const cRes = await fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=100`);
-      if (cRes.ok) {
-        const data = await cRes.json();
-        setAllCategoriesList(data.items || []);
-        sessionStorage.setItem('reports_cached_all_categories', JSON.stringify(data.items || []));
-      }
-      
-      const sRes = await fetch(`${API_ENDPOINTS.STREETS.BASE}?per_page=20`);
-      if (sRes.ok) {
-        const data = await sRes.json();
-        setAllStreets(data.items || []);
-        sessionStorage.setItem('reports_cached_streets_list', JSON.stringify(data.items || []));
-      }
+      const [tRes, cRes, sRes] = await Promise.all([
+        fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=100`),
+        fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=100`),
+        fetch(`${API_ENDPOINTS.STREETS.BASE}?per_page=20`)
+      ]);
 
-    } catch (error) { console.error(error); }
+      const [tData, cData, sData] = await Promise.all([tRes.json(), cRes.json(), sRes.json()]);
+      
+      const trustList = tData.items || [];
+      setTrusts(trustList);
+      sessionStorage.setItem('global_cached_trusts', JSON.stringify(trustList));
+      
+      setAllCategoriesList(cData.items || []);
+      sessionStorage.setItem('reports_cached_all_categories', JSON.stringify(cData.items || []));
+      
+      const streetList = sData.items || [];
+      setAllStreets(streetList);
+      sessionStorage.setItem('global_cached_streets', JSON.stringify(streetList.map(s => s.name)));
+
+      // Sync name for the selected trust
+      if (selectedTrust) {
+        const t = trustList.find(x => x.id === selectedTrust);
+        if (t) setSelectedTrustName(t.name);
+      } else if (trustList.length > 0) {
+        setSelectedTrust(trustList[0].id);
+        setSelectedTrustName(trustList[0].name);
+      }
+    } catch (error) { 
+      console.error("Failed to fetch initial report metadata:", error); 
+    }
   };
 
   // Reset searches when dropdowns close
   useEffect(() => { if (!showStreetDropdown) { setStreetSearch(''); setStreetPage(1); } }, [showStreetDropdown]);
-  useEffect(() => { if (!showTrustDropdown) setTrustSearch(''); }, [showTrustDropdown]);
+
   useEffect(() => { if (!showCategoryDropdown) setCategorySearch(''); }, [showCategoryDropdown]);
 
   const handleGenerateReport = async () => {
     if (!selectedTrust) return;
     setLoading(true);
     try {
+      // 1. Try to load from cache first using current filters
+      const wasCached = await loadCachedReport(true);
+      if (wasCached) {
+        console.log("✅ Using existing backend cache.");
+        return;
+      }
+      
+      // 2. Only if cache doesn't exist, generate fresh
+      console.log("🚀 No cache found. Generating fresh report...");
       const streetParam = selectedStreets.length > 0 ? `&streets=${encodeURIComponent(selectedStreets.join(','))}` : '';
       const genderParam = selectedGender !== 'All' ? `&gender=${selectedGender}` : '';
+      const catParam = selectedCategories.length > 0 ? `&categories=${encodeURIComponent(selectedCategories.join(','))}` : '';
+      const dateParam = (fromDate ? `&from_date=${fromDate}` : '') + (toDate ? `&to_date=${toDate}` : '');
       
-      const res = await fetch(`${API_ENDPOINTS.REPORTS.GENERATE}?trust_id=${selectedTrust}&hijri_year=${selectedYear}${genderParam}${streetParam}`, {
+      const res = await fetch(`${API_ENDPOINTS.REPORTS.GENERATE}?trust_id=${selectedTrust}&hijri_year=${selectedYear}${genderParam}${streetParam}${catParam}${dateParam}`, {
         method: 'POST'
       });
 
@@ -290,15 +386,12 @@ const Reports = () => {
         setReportGenerated(true);
         setLastGenerated(result.last_generated);
 
-        // Save to cache
         sessionStorage.setItem('reports_cached_data', JSON.stringify(result.data));
         sessionStorage.setItem('reports_cached_categories', JSON.stringify(result.categories));
         sessionStorage.setItem('reports_cached_summary', JSON.stringify(result.summary));
-        sessionStorage.setItem('reports_cached_last_generated', result.last_generated);
-        sessionStorage.setItem('reports_cached_generated_flag', 'true');
       }
     } catch (error) {
-      console.error("Error generating report:", error);
+      console.error("Error in report workflow:", error);
     } finally {
       setLoading(false);
     }
@@ -310,6 +403,16 @@ const Reports = () => {
     row.street.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const scrollContainer = (ref, direction) => {
+    if (ref.current) {
+      const scrollAmount = 200;
+      ref.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth'
+      });
+    }
+  };
+
   const handleExportClick = () => {
     const trust = trusts.find(t => t.id === selectedTrust);
     const trustPart = trust ? trust.name.replace(/[^a-z0-9]/gi, '_').toLowerCase() : '';
@@ -319,20 +422,9 @@ const Reports = () => {
     if (trustPart) base += `_${trustPart}`;
     if (yearPart) base += `_${yearPart}`;
     
-    // Add Gender
-    if (selectedGender !== 'All') {
-      base += `_${selectedGender.toLowerCase()}`;
-    }
-
-    // Add Street count if specific streets are selected
-    if (selectedStreets.length > 0) {
-      base += `_${selectedStreets.length}streets`;
-    }
-
-    // Add Category count if specific categories are selected
-    if (selectedCategories.length > 0) {
-      base += `_${selectedCategories.length}cats`;
-    }
+    // Add Dates
+    if (fromDate) base += `_from_${fromDate}`;
+    if (toDate) base += `_to_${toDate}`;
     
     setExportFilename(base);
     setShowExportModal(true);
@@ -361,7 +453,23 @@ const Reports = () => {
 
     worksheet.columns = columns;
 
-    // 2. Add TOTALS Row (Row 2)
+    // 2. Insert Filter Summary Rows at the very top (above headers)
+    const trustName = trusts.find(t => t.id === selectedTrust)?.name || 'All Trusts';
+    const summaryRows = [
+      [`REPORT FILTERS: ${trustName}`],
+      [`Year: ${selectedYear || 'All'}`, `Gender: ${selectedGender}`, `From: ${fromDate || 'N/A'}`, `To: ${toDate || 'N/A'}`],
+      [`Generated At: ${new Date().toLocaleString()}`],
+      [] // Spacer
+    ];
+
+    worksheet.insertRows(1, summaryRows);
+    
+    // Merge cells for the first summary row
+    worksheet.mergeCells('A1:H1');
+    worksheet.getRow(1).font = { bold: true, size: 14 };
+    worksheet.getRow(2).font = { italic: true };
+
+    // 3. Add TOTALS Row (Now Row 6 because we inserted 4 rows + 1 original header)
     const totalsData = {
       donor_name: 'TOTALS',
       door_no: '',
@@ -385,8 +493,9 @@ const Reports = () => {
     });
 
     // 4. Styling
-    // Style Header Row
-    const headerRow = worksheet.getRow(1);
+
+    // Style Header Row (Now Row 5)
+    const headerRow = worksheet.getRow(5);
     headerRow.height = 35;
     headerRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
@@ -404,7 +513,7 @@ const Reports = () => {
       };
     });
 
-    // Style Totals Row (Row 2)
+    // Style Totals Row (Now Row 6)
     totalsRow.height = 25;
     totalsRow.eachCell((cell) => {
       cell.font = { bold: true };
@@ -424,7 +533,7 @@ const Reports = () => {
 
     // Style Data Rows
     worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber <= 2) return; // Skip header and totals
+      if (rowNumber <= 6) return; // Skip filter summary (1-4), header (5), and totals (6)
       
       row.height = 22;
       row.eachCell((cell, colNumber) => {
@@ -463,153 +572,36 @@ const Reports = () => {
       <header className={styles.header}>
         <h1 className={styles.mainTitle}>Donation Reports</h1>
         
-        <div 
-          className={styles.filterRow}
-          ref={filterRowRef}
-          onMouseEnter={() => setIsHoveringFilter(true)}
-          onMouseLeave={() => setIsHoveringFilter(false)}
-        >
-          <div className={styles.filterGroup}>
-            {/* Searchable Trust Dropdown */}
-            <div className={styles.multiSelectContainer}>
-              <div 
-                className={styles.multiSelectTrigger}
-                onClick={() => setShowTrustDropdown(!showTrustDropdown)}
-              >
-                <span>{selectedTrustName || 'Select Trust'}</span>
-                <ChevronDown size={14} />
-              </div>
+        <div className={styles.filterRow}>
+          <button 
+            type="button"
+            className={styles.scrollBtn} 
+            onClick={() => scrollContainer(filterRowRef, 'left')}
+          >
+            <ChevronLeft size={18} />
+          </button>
+          
+          <div className={styles.filterGroup} ref={filterRowRef}>
+            {/* 1. Trust */}
+            <TrustSelect 
+              value={selectedTrust}
+              onChange={(val) => {
+                setSelectedTrust(val);
+                sessionStorage.setItem('reports_selected_trust', val);
+                const tList = JSON.parse(sessionStorage.getItem('global_cached_trusts') || '[]');
+                const t = tList.find(x => x.id === val);
+                if (t) {
+                  setSelectedTrustName(t.name);
+                  sessionStorage.setItem('reports_selected_trust_name', t.name);
+                } else {
+                  setSelectedTrustName('');
+                  sessionStorage.setItem('reports_selected_trust_name', '');
+                }
+              }}
+              placeholder="Select Trust"
+            />
 
-              {showTrustDropdown && (
-                <div className={styles.multiSelectDropdown} onClick={(e) => e.stopPropagation()}>
-                  <div className={styles.dropdownHeader}>
-                    <span>Select Trust</span>
-                  </div>
-                  <div className={styles.dropdownSearch}>
-                    <input 
-                      type="text" 
-                      placeholder="Search trusts..." 
-                      value={trustSearch}
-                      onChange={(e) => setTrustSearch(e.target.value)}
-                      autoFocus
-                    />
-                  </div>
-                  <div className={styles.dropdownList}>
-                    {trusts.map(t => (
-                      <div 
-                        key={t.id} 
-                        className={`${styles.checkItem} ${selectedTrust === t.id ? styles.itemActive : ''}`}
-                        onClick={() => {
-                          setSelectedTrust(t.id);
-                          setSelectedTrustName(t.name);
-                          setShowTrustDropdown(false);
-                        }}
-                      >
-                        <span>{t.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            <div className={styles.inputWrapper}>
-              <input 
-                type="text" 
-                placeholder="Year" 
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(e.target.value)}
-              />
-            </div>
-            
-            <div className={styles.selectWrapper}>
-              <select value={selectedGender} onChange={(e) => setSelectedGender(e.target.value)}>
-                <option value="All">All Genders</option>
-                <option value="M">Male Only</option>
-                <option value="F">Female Only</option>
-              </select>
-              <ChevronDown size={14} className={styles.chevron} />
-            </div>
-
-            {/* Categories Filter */}
-            <div className={styles.multiSelectContainer}>
-              <div 
-                className={styles.multiSelectTrigger}
-                onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-              >
-                <span>
-                  {selectedCategories.length === 0 
-                    ? "All Categories" 
-                    : `${selectedCategories.length} Categories Selected`}
-                </span>
-                <ChevronDown size={14} />
-              </div>
-              
-              {showCategoryDropdown && (
-                <div className={styles.multiSelectDropdown} onClick={(e) => e.stopPropagation()}>
-                  <div className={styles.dropdownHeader}>
-                    <span>Filter by Categories</span>
-                    <button onClick={() => setSelectedCategories([])}>Clear</button>
-                  </div>
-                  
-                  <div className={styles.dropdownSearch}>
-                    <input 
-                      type="text" 
-                      placeholder="Search categories..." 
-                      value={categorySearch}
-                      onChange={(e) => setCategorySearch(e.target.value)}
-                      autoFocus
-                    />
-                  </div>
-
-                  <div className={styles.dropdownList}>
-                    {selectedCategories.length > 0 && !categorySearch && (
-                      <div className={styles.pinnedSection}>
-                         <div className={styles.sectionLabel}>Selected</div>
-                         {selectedCategories.map(cid => {
-                           const c = allCategoriesList.find(x => x.id === cid);
-                           return (
-                             <label key={`pinned-cat-${cid}`} className={styles.checkItem}>
-                               <input 
-                                 type="checkbox"
-                                 checked={true}
-                                 onChange={() => setSelectedCategories(prev => prev.filter(x => x !== cid))}
-                               />
-                               <span>{c?.name || cid}</span>
-                             </label>
-                           );
-                         })}
-                         <div className={styles.divider}></div>
-                      </div>
-                    )}
-
-                    {allCategoriesList
-                      .filter(c => !selectedCategories.includes(c.id))
-                      .map(cat => (
-                        <label key={cat.id} className={styles.checkItem}>
-                          <input 
-                            type="checkbox"
-                            checked={selectedCategories.includes(cat.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedCategories([...selectedCategories, cat.id]);
-                              } else {
-                                setSelectedCategories(selectedCategories.filter(x => x !== cat.id));
-                              }
-                            }}
-                          />
-                          <span>{cat.name}</span>
-                        </label>
-                    ))}
-                  </div>
-                  <div className={styles.dropdownFooter}>
-                    <button onClick={() => setShowCategoryDropdown(false)}>Done</button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Multi-Street Filter */}
+            {/* 2. Multi-Street Filter */}
             <div className={styles.multiSelectContainer}>
               <div 
                 className={styles.multiSelectTrigger}
@@ -652,11 +644,15 @@ const Reports = () => {
                              <input 
                                type="checkbox"
                                checked={true}
-                               onChange={() => setSelectedStreets(prev => prev.filter(x => x !== sn))}
-                             />
-                             <span>{sn}</span>
-                           </label>
-                         ))}
+                             onChange={() => {
+                               const updated = selectedStreets.filter(x => x !== sn);
+                               setSelectedStreets(updated);
+                               sessionStorage.setItem('reports_selected_streets', JSON.stringify(updated));
+                             }}
+                           />
+                           <span>{sn}</span>
+                         </label>
+                       ))}
                          <div className={styles.divider}></div>
                       </div>
                     )}
@@ -711,7 +707,153 @@ const Reports = () => {
                 </div>
               )}
             </div>
+            
+            {/* 3. Year */}
+            <div className={styles.inputWrapper}>
+              <input 
+                type="text" 
+                placeholder="Year" 
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+              />
+            </div>
+
+            {/* 4. Gender */}
+            <div className={styles.selectWrapper}>
+              <select value={selectedGender} onChange={(e) => setSelectedGender(e.target.value)}>
+                <option value="All">All Genders</option>
+                <option value="M">Male Only</option>
+                <option value="F">Female Only</option>
+              </select>
+              <ChevronDown size={14} className={styles.chevron} />
+            </div>
+
+            {/* 5. Categories Filter */}
+            <div className={styles.multiSelectContainer}>
+              <div 
+                className={styles.multiSelectTrigger}
+                onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+              >
+                <span>
+                  {selectedCategories.length === 0 
+                    ? "All Categories" 
+                    : `${selectedCategories.length} Categories Selected`}
+                </span>
+                <ChevronDown size={14} />
+              </div>
+              
+              {showCategoryDropdown && (
+                <div className={styles.multiSelectDropdown} onClick={(e) => e.stopPropagation()}>
+                  <div className={styles.dropdownHeader}>
+                    <span>Filter by Categories</span>
+                    <button onClick={() => setSelectedCategories([])}>Clear</button>
+                  </div>
+                  
+                  <div className={styles.dropdownSearch}>
+                    <input 
+                      type="text" 
+                      placeholder="Search categories..." 
+                      value={categorySearch}
+                      onChange={(e) => setCategorySearch(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className={styles.dropdownList}>
+                    {selectedCategories.length > 0 && !categorySearch && (
+                      <div className={styles.pinnedSection}>
+                         <div className={styles.sectionLabel}>Selected</div>
+                         {selectedCategories.map(cid => {
+                           const c = allCategoriesList.find(x => x.id === cid);
+                           return (
+                             <label key={`pinned-cat-${cid}`} className={styles.checkItem}>
+                               <input 
+                                 type="checkbox"
+                                 checked={true}
+                               onChange={() => {
+                               const updated = selectedCategories.filter(x => x !== cid);
+                               setSelectedCategories(updated);
+                               sessionStorage.setItem('reports_selected_categories', JSON.stringify(updated));
+                             }}
+                           />
+                           <span>{c?.name || cid}</span>
+                         </label>
+                       );
+                     })}
+                         <div className={styles.divider}></div>
+                      </div>
+                    )}
+
+                    {allCategoriesList
+                      .filter(c => !selectedCategories.includes(c.id))
+                      .map(cat => (
+                        <label key={cat.id} className={styles.checkItem}>
+                          <input 
+                            type="checkbox"
+                            checked={selectedCategories.includes(cat.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedCategories([...selectedCategories, cat.id]);
+                              } else {
+                                setSelectedCategories(selectedCategories.filter(x => x !== cat.id));
+                              }
+                            }}
+                          />
+                          <span>{cat.name}</span>
+                        </label>
+                    ))}
+
+                    {hasMoreCategories && (
+                      <button 
+                        className={styles.miniLoadMore}
+                        onClick={() => setCategoryPage(prev => prev + 1)}
+                        disabled={loadingCategories}
+                      >
+                        {loadingCategories ? "..." : "Load More"}
+                      </button>
+                    )}
+                  </div>
+                  <div className={styles.dropdownFooter}>
+                    <button onClick={() => setShowCategoryDropdown(false)}>Done</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 6. Dates */}
+             <div className={`${styles.inputWrapper} ${styles.dateInputWrapper}`}>
+               <div className={styles.dateLabel}>From</div>
+               <input 
+                 type="date" 
+                 value={fromDate}
+                 onChange={(e) => {
+                   setFromDate(e.target.value);
+                   sessionStorage.setItem('reports_selected_from_date', e.target.value);
+                 }}
+               />
+             </div>
+ 
+             <div className={`${styles.inputWrapper} ${styles.dateInputWrapper}`}>
+               <div className={styles.dateLabel}>To</div>
+               <input 
+                 type="date" 
+                 value={toDate}
+                 onChange={(e) => {
+                   setToDate(e.target.value);
+                   sessionStorage.setItem('reports_selected_to_date', e.target.value);
+                 }}
+               />
+             </div>
           </div>
+
+          <button 
+            type="button"
+            className={styles.scrollBtn} 
+            onClick={() => scrollContainer(filterRowRef, 'right')}
+            title="Scroll Right"
+          >
+            <ChevronRight size={18} />
+          </button>
 
           <div className={styles.actions}>
             <button 
@@ -748,6 +890,18 @@ const Reports = () => {
             <Users size={14} />
             <span>Gender: <b>{selectedGender === 'All' ? 'All Genders' : (selectedGender === 'M' ? 'Male' : 'Female')}</b></span>
           </div>
+          {fromDate && (
+            <div className={styles.metaItem}>
+              <TrendingUp size={14} />
+              <span>From: <b>{fromDate}</b></span>
+            </div>
+          )}
+          {toDate && (
+            <div className={styles.metaItem}>
+              <TrendingUp size={14} />
+              <span>To: <b>{toDate}</b></span>
+            </div>
+          )}
           {selectedStreets.length > 0 && (
             <div className={styles.metaItem}>
               <MapPin size={14} />
@@ -771,13 +925,33 @@ const Reports = () => {
           </div>
           <div className={styles.categorySplitArea}>
             <div className={styles.splitHeader}>Category Breakdown</div>
-            <div className={styles.categoryRow} ref={summaryRowRef}>
-              {categories.map(cat => (
-                <div key={cat.id} className={styles.catCard}>
-                  <span className={styles.catCardName}>{cat.name}</span>
-                  <span className={styles.catCardValue}>₹{(summary.categories[cat.id] || 0).toLocaleString()}</span>
-                </div>
-              ))}
+            <div className={styles.summaryScrollWrapper}>
+              <button 
+                type="button"
+                className={styles.summaryScrollBtn} 
+                onClick={() => scrollContainer(summaryRowRef, 'left')}
+                title="Scroll Left"
+              >
+                <ChevronLeft size={16} />
+              </button>
+
+              <div className={styles.categoryRow} ref={summaryRowRef}>
+                {categories.map(cat => (
+                  <div key={cat.id} className={styles.catCard}>
+                    <span className={styles.catCardName}>{cat.name}</span>
+                    <span className={styles.catCardValue}>₹{(summary.categories[cat.id] || 0).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+
+              <button 
+                type="button"
+                className={styles.summaryScrollBtn} 
+                onClick={() => scrollContainer(summaryRowRef, 'right')}
+                title="Scroll Right"
+              >
+                <ChevronRight size={16} />
+              </button>
             </div>
           </div>
         </section>

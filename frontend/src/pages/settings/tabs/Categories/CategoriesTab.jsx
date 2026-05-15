@@ -41,6 +41,7 @@ const CategoriesTab = ({ onConfirmDelete }) => {
       const totalPages = Math.ceil(lastPage.total / lastPage.per_page);
       return lastPage.page < totalPages ? lastPage.page + 1 : undefined;
     },
+    staleTime: 1000 * 60 * 5, // 5 minutes cache for tab switching
   });
 
   // Subscribe to real-time updates
@@ -51,12 +52,37 @@ const CategoriesTab = ({ onConfirmDelete }) => {
     return () => unsubscribe();
   }, [queryClient]);
 
+  const updateGlobalCache = (newCategory, oldCategoryId = null) => {
+    try {
+      // 1. Update Reports general cache
+      const saved = sessionStorage.getItem('reports_cached_all_categories');
+      let cats = saved ? JSON.parse(saved) : [];
+      
+      if (oldCategoryId) {
+        cats = cats.filter(c => c.id !== oldCategoryId);
+      }
+      
+      if (newCategory) {
+        // If edit, it might already be there, replace it
+        cats = cats.filter(c => c.id !== newCategory.id);
+        cats.push(newCategory);
+      }
+      
+      sessionStorage.setItem('reports_cached_all_categories', JSON.stringify(cats));
+
+      // 2. Clear trust-specific category caches to force refresh on entry page
+      sessionStorage.removeItem('entry_trust_category_cache');
+    } catch (err) { console.error("Cache update failed:", err); }
+  };
+
   const handleSave = async () => {
     if (!editModal.data || !editModal.data.name.trim()) {
       alert("Category Name is required.");
       return;
     }
     const isEdit = editModal.mode === 'edit';
+    const newName = editModal.data.name.trim().toUpperCase();
+    
     const url = isEdit 
       ? API_ENDPOINTS.CATEGORIES.DETAIL(editModal.data.id)
       : API_ENDPOINTS.CATEGORIES.CREATE;
@@ -65,9 +91,11 @@ const CategoriesTab = ({ onConfirmDelete }) => {
       const response = await fetch(url, {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(isEdit ? editModal.data : { name: editModal.data.name })
+        body: JSON.stringify(isEdit ? { ...editModal.data, name: newName } : { name: newName })
       });
       if (response.ok) {
+        const savedCat = await response.json();
+        updateGlobalCache(savedCat, isEdit ? savedCat.id : null);
         setEditModal({ isOpen: false, mode: 'edit', data: null });
         queryClient.invalidateQueries({ queryKey: ['categories'] });
       }
@@ -85,6 +113,7 @@ const CategoriesTab = ({ onConfirmDelete }) => {
         try {
           const res = await fetch(API_ENDPOINTS.CATEGORIES.DETAIL(id), { method: 'DELETE' });
           if (res.ok) {
+            updateGlobalCache(null, id);
             queryClient.invalidateQueries({ queryKey: ['categories'] });
           } else {
             const errData = await res.json();
@@ -178,9 +207,10 @@ const CategoriesTab = ({ onConfirmDelete }) => {
                   <input 
                     type="text"
                     value={editModal.data.name}
-                    onChange={(e) => setEditModal({ ...editModal, data: { ...editModal.data, name: e.target.value } })}
-                    placeholder="e.g. Mosque Fund"
+                    onChange={(e) => setEditModal({ ...editModal, data: { ...editModal.data, name: e.target.value.toUpperCase() } })}
+                    placeholder="e.g. MOSQUE FUND"
                     autoFocus
+                    style={{ textTransform: 'uppercase' }}
                   />
                 </div>
               </div>

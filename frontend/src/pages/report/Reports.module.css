@@ -3,9 +3,9 @@
   flex-direction: column;
   gap: 1.5rem;
   width: 100%;
-  padding-right: 1.5rem;
-  padding-bottom: 3rem;
+  padding: 0 2rem 5rem 2rem; /* Balanced padding */
   box-sizing: border-box;
+  min-height: min-content; /* Force growth */
 }
 
 .header {
@@ -16,35 +16,51 @@
   border-bottom: 1px solid var(--border);
   background: transparent;
   margin-bottom: 0.5rem;
+  position: relative;
+  z-index: 500; /* High z-index for dropdowns */
 }
 
 .mainTitle {
   font-size: 1.75rem;
   font-weight: 800;
-  color: var(--text-main);
+  color: var(--text-dark);
   margin: 0;
+  letter-spacing: -0.02em;
 }
 
 .filterRow {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 1.5rem;
+  gap: 0.75rem;
   width: 100%;
   position: relative;
+  z-index: 101;
 }
 
 .filterGroup {
   display: flex;
   gap: 0.75rem;
   flex-wrap: nowrap; /* FORCE SINGLE LINE */
-  overflow-x: auto;
-  padding: 0.25rem 0 350px 0; /* LARGE PADDING TO SHOW DROPDOWNS */
-  margin-bottom: -350px; /* OFFSET PADDING */
+  overflow-x: auto; /* ALLOW NATURAL SCROLL */
+  overflow-y: visible; 
+  touch-action: auto; /* RESTORE NATURAL TOUCH */
+  padding: 0.5rem 0.5rem 300px 0.5rem; /* PADDING HACK FOR DROPDOWNS */
+  margin-bottom: -300px; /* OFFSET PADDING */
   flex: 1;
   min-width: 0;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  /* Ensure unified components like TrustSelect use white bg in Reports */
+  --select-bg: var(--bg-card);
+  pointer-events: none; /* PREVENT PADDING HACK FROM BLOCKING CLICKS BELOW */
+}
+
+.filterGroup > * {
+  pointer-events: auto; /* RESTORE CLICKS FOR FILTER ITEMS */
+}
+
+.filterGroup::-webkit-scrollbar {
+  display: none;
 }
 
 .filterGroup::-webkit-scrollbar {
@@ -57,15 +73,16 @@
   gap: 8px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  padding: 0 0.85rem;
+  padding: 0 1rem;
   border-radius: 10px;
-  color: var(--text-muted);
+  color: var(--text-main);
   position: relative;
   transition: all 0.2s;
-  height: 40px; /* Restored comfortable height */
+  height: 40px;
   min-width: 140px;
   box-sizing: border-box;
   flex-shrink: 0;
+  cursor: pointer;
 }
 
 .selectWrapper:hover, .inputWrapper:hover, .multiSelectTrigger:hover {
@@ -74,15 +91,23 @@
 }
 
 .selectWrapper select, .inputWrapper input, .multiSelectTrigger span {
-  background: transparent;
-  border: none;
+  background: transparent !important;
+  border: none !important;
   color: var(--text-main);
   outline: none;
-  padding: 0;
+  padding: 8px 0; /* Add vertical padding to prevent cursor clip */
   font-weight: 600;
   font-size: 0.9rem;
   cursor: pointer;
   width: 100%;
+  appearance: none; /* Remove browser default arrow/circles */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  line-height: 1.2;
+}
+
+.selectWrapper select {
+  padding-right: 20px; /* Space for chevron */
 }
 
 .inputWrapper {
@@ -92,6 +117,27 @@
 
 .inputWrapper input {
   cursor: text;
+}
+
+.dateLabel {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--primary);
+  opacity: 0.8;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.dateInputWrapper {
+  min-width: 175px !important;
+  width: auto !important;
+  padding: 0 0.75rem !important;
+}
+
+.dateInputWrapper input {
+  font-size: 0.8rem !important;
+  min-width: 110px;
 }
 
 .multiSelectTrigger {
@@ -131,6 +177,33 @@
   border: none;
 }
 
+.scrollBtn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--primary);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  z-index: 100;
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.scrollBtn:hover {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+  transform: scale(1.1);
+  opacity: 1;
+}
+
 .generateBtn {
   background: var(--primary);
   color: white;
@@ -153,8 +226,6 @@
   border-radius: var(--radius-lg);
   align-items: center;
   box-shadow: var(--shadow-sm);
-  position: relative;
-  z-index: 10; /* ABOVE FILTER PADDING */
 }
 
 .grandTotalInfo {
@@ -196,18 +267,52 @@
   letter-spacing: 0.05em;
 }
 
-.categoryRow {
+.summaryScrollWrapper {
   display: flex;
-  gap: 1rem;
-  overflow-x: auto;
-  padding-bottom: 12px; /* ADDED GAP FOR SCROLLBAR */
+  align-items: center;
+  gap: 0.75rem;
   width: 100%;
 }
 
+.summaryScrollBtn {
+  background: white;
+  border: 1px solid var(--border);
+  color: var(--primary);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  z-index: 100;
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+  opacity: 0.7;
+}
 
+.summaryScrollBtn:hover {
+  opacity: 1;
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+  transform: scale(1.1);
+}
+
+.categoryRow {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto; /* ALLOW NATURAL SCROLL */
+  touch-action: auto; /* RESTORE NATURAL TOUCH */
+  padding: 0.5rem 0;
+  flex: 1;
+  scrollbar-width: none;
+}
 
 .categoryRow::-webkit-scrollbar {
-  height: 4px;
+  display: none;
 }
 
 .categoryRow::-webkit-scrollbar-thumb {
@@ -244,11 +349,6 @@
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  z-index: 5;
   margin-top: 1.5rem;
 }
 
@@ -305,9 +405,8 @@
 }
 
 .tableWrapper {
-  overflow: auto;
-  max-height: 600px;
-  position: relative;
+  overflow-x: auto;
+  width: 100%;
 }
 
 .reportTable {
@@ -318,8 +417,6 @@
 }
 
 .reportTable thead th {
-  position: sticky;
-  top: 0;
   background: var(--bg-card);
   padding: 1rem 1.5rem;
   font-weight: 700;
@@ -328,7 +425,6 @@
   font-size: 0.75rem;
   letter-spacing: 0.05em;
   border-bottom: 2px solid var(--border);
-  z-index: 10;
 }
 
 .reportTable tbody td {
@@ -624,19 +720,8 @@
 }
 
 .multiSelectTrigger {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  padding: 0.5rem 1.25rem;
-  border-radius: var(--radius-md);
-  color: var(--text-main);
-  cursor: pointer;
-  min-height: 40px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  transition: all 0.2s;
+  min-width: 200px;
+  font-weight: 600;
 }
 
 .multiSelectTrigger:hover {

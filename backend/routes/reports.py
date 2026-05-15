@@ -11,17 +11,33 @@ async def get_report_data(
     hijri_year: Optional[str] = None,
     gender: Optional[str] = None,
     streets: Optional[str] = None,
-    categories: Optional[str] = None
+    categories: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None
 ):
     try:
-        # Include all filters in cache key
-        cache_key = f"{trust_id}_{hijri_year}_{gender}_{streets}_{categories}"
-        cached = get_cached_data(trust_id, "REPORT", cache_key)
-        if cached:
+        # Build filter dict
+        filters_dict = {
+            "trust_id": trust_id,
+            "hijri_year": hijri_year,
+            "gender": gender,
+            "streets": streets,
+            "categories": categories,
+            "from_date": from_date,
+            "to_date": to_date
+        }
+        
+        # If no trust_id/hijri_year given, try to get the LATEST report
+        is_latest_search = not trust_id or not hijri_year
+        
+        cached_value, cached_fields = get_cached_data("REPORT", None if is_latest_search else filters_dict)
+        
+        if cached_value:
             return {
                 "status": True,
                 "from_cache": True,
-                **cached
+                "filters": cached_fields,
+                **cached_value
             }
 
         return {
@@ -42,7 +58,9 @@ async def generate_report(
     hijri_year: Optional[str] = None,
     gender: Optional[str] = None,
     streets: Optional[str] = None,
-    categories: Optional[str] = None # Comma separated IDs
+    categories: Optional[str] = None, # Comma separated IDs
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None
 ):
     try:
         print(f"📊 Generating report: trust={trust_id}, year={hijri_year}, gender={gender}, streets={streets}, cats={categories}")
@@ -51,15 +69,24 @@ async def generate_report(
         cat_id_list = categories.split(",") if categories else []
         
         # Calculate fresh
-        report_data = await calculate_fresh_report(trust_id, hijri_year, gender, street_list, cat_id_list)
+        report_data = await calculate_fresh_report(trust_id, hijri_year, gender, street_list, cat_id_list, from_date, to_date)
         
-        # Save to metadata cache with specific key
-        cache_key = f"{trust_id}_{hijri_year}_{gender}_{streets}_{categories}"
-        cached_data = update_cached_data(trust_id, "REPORT", report_data, cache_key)
+        # Save to metadata cache
+        filters_dict = {
+            "trust_id": trust_id,
+            "hijri_year": hijri_year,
+            "gender": gender,
+            "streets": streets,
+            "categories": categories,
+            "from_date": from_date,
+            "to_date": to_date
+        }
+        cached_data = update_cached_data("REPORT", report_data, filters_dict)
         
         return {
             "status": True,
             "msg": "Report generated successfully",
+            "filters": filters_dict,
             **cached_data
         }
     except Exception as e:
@@ -71,7 +98,9 @@ async def calculate_fresh_report(
     hijri_year: Optional[str] = None,
     gender: Optional[str] = None,
     street_list: List[str] = [],
-    cat_id_list: List[str] = []
+    cat_id_list: List[str] = [],
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None
 ):
     # 1. Fetch categories
     all_categories = pb.collection('categories').get_full_list()
@@ -82,6 +111,11 @@ async def calculate_fresh_report(
         filters.append(f'trust_id = "{trust_id}"')
     if hijri_year:
         filters.append(f'hijri_year = "{hijri_year}"')
+    
+    if from_date:
+        filters.append(f'payment_date >= "{from_date} 00:00:00"')
+    if to_date:
+        filters.append(f'payment_date <= "{to_date} 23:59:59"')
     
     # Apply Donor-level filters
     if gender and gender != 'All':
@@ -168,7 +202,20 @@ async def calculate_fresh_report(
                 summary[cat_id] += item_amt
                 grand_total += item_amt
     
-    # 5. Filter visible categories
+    # 5. Determine which categories should be visible
+    # We show a category if:
+    # A. It's assigned to this trust (even if empty)
+    # B. It has data in this report (even if not assigned)
+    # UNLESS a specific category filter (target_cat_ids) was applied by the user
+    
+    assigned_cat_ids = set()
+    if trust_id:
+        try:
+            trust_record = pb.collection('trusts').get_one(trust_id)
+            assigned_cat_ids = set(getattr(trust_record, "category_ids", []))
+        except:
+            pass
+
     visible_categories = []
     for cat in all_categories:
         # If filtering by categories, only show those explicitly selected
@@ -176,8 +223,9 @@ async def calculate_fresh_report(
             continue
             
         has_data = summary.get(cat.id, 0) > 0
-        is_relevant = trust_id and trust_id in getattr(cat, "trust_ids", [])
-        if has_data or is_relevant:
+        is_assigned = cat.id in assigned_cat_ids
+        
+        if has_data or is_assigned:
             visible_categories.append({"id": cat.id, "name": cat.name})
 
     # 6. Format

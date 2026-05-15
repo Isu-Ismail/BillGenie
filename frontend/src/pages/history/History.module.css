@@ -214,41 +214,186 @@
 /* Filter Bar Styles */
 .filterBar {
   display: flex;
-  gap: 1.5rem;
-  background: var(--bg-card);
-  padding: 1.25rem;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-  align-items: flex-end;
+  align-items: stretch;
+  margin-bottom: 2rem;
+  position: relative;
+  z-index: 101;
 }
 
+.filterScrollArea {
+  flex: 1;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem 1.5rem 300px 1.5rem;
+  margin-bottom: -300px;
+  overflow-x: auto;
+  align-items: center;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  pointer-events: none;
+  --select-bg: #ffffff; /* FORCE WHITE BG FOR CUSTOM SELECTS */
+}
+
+.filterScrollArea > * {
+  flex-shrink: 0;
+  pointer-events: auto; /* RESTORE CLICKS FOR FILTER ITEMS */
+}
+
+.filterScrollArea::-webkit-scrollbar {
+  display: none;
+}
+
+.filterSection, .donorFilter, .yearFilter {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
 
 .donorFilter {
-  flex: 2;
+  flex: 1.5;
+  min-width: 200px;
 }
 
-.yearFilter {
-  flex: 1;
+.filterSection, .yearFilter {
+  flex: 1.2;
+  min-width: 180px;
 }
+
+/* Labels removed from JSX */
+
+.searchableSelect {
+  position: relative;
+  width: 100%;
+}
+
+.selectTrigger {
+  height: 40px;
+  padding: 0 1rem;
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--text-main);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.selectTrigger:hover {
+  border-color: var(--primary);
+  background: rgba(139, 92, 246, 0.05);
+}
+
+.triggerActive {
+  border-color: var(--primary);
+  background: rgba(139, 92, 246, 0.05);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.placeholder {
+  color: var(--text-muted);
+  font-weight: 500;
+  opacity: 0.6;
+}
+
+.selectDropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  overflow: hidden;
+  min-width: 250px;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.dropdownSearch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-main);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.dropdownSearch input {
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  outline: none;
+  font-size: 0.85rem;
+  width: 100%;
+}
+
+.dropdownList {
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.dropdownItem {
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--text-main);
+}
+
+.dropdownItem:hover {
+  background: rgba(139, 92, 246, 0.05);
+  color: var(--primary);
+}
+
+.itemSelected {
+  background: rgba(139, 92, 246, 0.1);
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.dropdownLoading, .noResults {
+  padding: 12px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+
+/* Redundant flex styles removed */
 
 .filterButtons {
   display: flex;
   gap: 0.75rem;
+  padding: 0.75rem 1.5rem 0 0.75rem; /* Only padding needed, no box */
+  align-items: center;
+  flex-shrink: 0;
+  z-index: 10;
 }
 
 .searchBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   background: var(--primary);
   color: white;
-  padding: 0.6rem 1.5rem;
+  padding: 0 1.5rem;
   border: none;
   border-radius: var(--radius-md);
   font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 8px;
   cursor: pointer;
   transition: all 0.2s;
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
+  height: 40px; /* Force same height as filters */
 }
 
 .searchBtn:hover:not(:disabled) {
@@ -256,73 +401,7 @@
   box-shadow: 0 6px 15px rgba(139, 92, 246, 0.3);
 }
 
-.customCheckbox {
-  display: flex;
-  align-items: center;
-  position: relative;
-  padding-left: 28px;
-  cursor: pointer;
-  font-size: 0.75rem;
-  color: var(--primary);
-  user-select: none;
-}
-
-.customCheckbox input {
-  position: absolute;
-  opacity: 0;
-  cursor: pointer;
-  height: 0;
-  width: 0;
-}
-
-.checkmark {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  transform: translateY(-50%);
-  height: 18px;
-  width: 18px;
-  background-color: var(--bg-main);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  transition: all 0.2s;
-}
-
-.customCheckbox:hover input~.checkmark {
-  border-color: var(--primary);
-}
-
-.customCheckbox input:checked~.checkmark {
-  background-color: var(--primary);
-  border-color: var(--primary);
-}
-
-.checkmark:after {
-  content: "";
-  position: absolute;
-  display: none;
-}
-
-.customCheckbox input:checked~.checkmark:after {
-  display: block;
-}
-
-.customCheckbox .checkmark:after {
-  left: 6px;
-  top: 2px;
-  width: 5px;
-  height: 10px;
-  border: solid white;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-
-.labelWithCheckbox {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-}
+/* Removed checkbox styles */
 
 
 .loadMoreWrapper {
@@ -352,38 +431,7 @@
 }
 
 
-.trustFilterSection {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 250px;
-}
 
-
-.trustFilterSection label {
-  font-size: 0.8rem;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-weight: 600;
-}
-
-.trustSelectInput {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  color: var(--text-main);
-  padding: 11px 15px;
-
-  border-radius: var(--radius-sm);
-  font-size: 0.95rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  outline: none;
-}
-
-.trustSelectInput:focus {
-  border-color: var(--accent-color);
-}
 
 
 .printAllBtn {
@@ -427,27 +475,37 @@
   background: var(--primary-light);
 }
 
-.yearFilter input {
+.yearFilter input,
+.dateInput {
   width: 100%;
   padding: 0.6rem;
-  background: var(--bg-main);
+  background: #ffffff;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   color: var(--text-main);
   outline: none;
+  font-family: inherit;
 }
 
-.yearFilter input:focus {
+.yearFilter input:focus,
+.dateInput:focus {
   border-color: var(--primary);
 }
 
+.dateInput {
+  min-width: 150px;
+}
+
 .resetBtn {
-  background: none;
-  border: none;
-  padding: 0.6rem 1.25rem;
+  background: #ffffff;
   color: var(--text-muted);
-  font-size: 0.9rem;
+  padding: 0 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-weight: 600;
   cursor: pointer;
+  transition: all 0.2s;
+  height: 40px; /* Same height */
 }
 
 
@@ -527,20 +585,21 @@
 }
 
 .editMetaSection {
-  display: flex;
-  gap: 20px;
+  display: grid;
+  /* Trust takes remaining space, Year is compact 120px, then trash area spacer */
+  grid-template-columns: 1fr 120px 40px; 
+  gap: 12px;
   margin-bottom: 20px;
   padding-bottom: 15px;
   border-bottom: 1px solid var(--border);
-  padding-right: 0.5rem; /* MATCHES itemsEditList PADDING FOR SYMMETRY */
 }
 
 .trustGroup {
-  flex: 1;
+  grid-column: 1;
 }
 
 .yearGroup {
-  width: 140px;
+  grid-column: 2;
 }
 
 .editMetaSection label {
@@ -553,15 +612,17 @@
 
 .modalInput {
   width: 100%;
-  padding: 12px 14px;
-  background: var(--bg-card);
+  height: 40px; /* Standardize height */
+  padding: 0 12px; /* Standardize padding */
+  background: var(--bg-main);
   border: 1px solid var(--border);
   color: var(--text-main);
   border-radius: 8px;
   outline: none;
-  font-size: 0.95rem;
-  line-height: 1.2;
+  font-size: 0.9rem;
+  line-height: 40px;
   transition: all 0.2s ease;
+  box-sizing: border-box;
 }
 
 .modalInput:focus {

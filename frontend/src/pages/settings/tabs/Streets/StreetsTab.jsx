@@ -42,6 +42,7 @@ const StreetsTab = ({ onConfirmDelete }) => {
       const totalPages = Math.ceil(lastPage.total / lastPage.per_page);
       return lastPage.page < totalPages ? lastPage.page + 1 : undefined;
     },
+    staleTime: 1000 * 60 * 5, // 5 minutes cache for tab switching
   });
 
   // Subscribe to real-time updates
@@ -53,9 +54,29 @@ const StreetsTab = ({ onConfirmDelete }) => {
     return () => unsubscribe();
   }, [queryClient]);
 
+  const updateGlobalCache = (newStreetName, oldStreetName = null) => {
+    try {
+      const saved = sessionStorage.getItem('global_cached_streets');
+      let streets = saved ? JSON.parse(saved) : [];
+      
+      if (oldStreetName) {
+        streets = streets.filter(s => s !== oldStreetName);
+      }
+      
+      if (newStreetName && !streets.includes(newStreetName)) {
+        streets.push(newStreetName);
+      }
+      
+      sessionStorage.setItem('global_cached_streets', JSON.stringify(streets));
+    } catch (err) { console.error("Cache update failed:", err); }
+  };
+
   const handleSave = async () => {
     if (!editModal.data || !editModal.data.name.trim()) return;
     const isEdit = editModal.mode === 'edit';
+    const oldName = isEdit ? streets.find(s => s.id === editModal.data.id)?.name : null;
+    const newName = editModal.data.name.toUpperCase();
+    
     const url = isEdit 
       ? API_ENDPOINTS.STREETS.DETAIL(editModal.data.id)
       : API_ENDPOINTS.STREETS.CREATE;
@@ -64,11 +85,11 @@ const StreetsTab = ({ onConfirmDelete }) => {
       const response = await fetch(url, {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editModal.data)
+        body: JSON.stringify({ ...editModal.data, name: newName })
       });
       if (response.ok) {
+        updateGlobalCache(newName, oldName);
         setEditModal({ isOpen: false, mode: 'create', data: null });
-        // Real-time sub will catch the change, but manual invalidation is safer
         queryClient.invalidateQueries({ queryKey: ['streets'] });
       }
     } catch (err) {
@@ -77,6 +98,7 @@ const StreetsTab = ({ onConfirmDelete }) => {
   };
 
   const handleDelete = (id) => {
+    const streetToDelete = streets.find(s => s.id === id);
     onConfirmDelete({
       title: "Delete Street",
       message: "Are you sure you want to delete this street/locality? This cannot be undone.",
@@ -85,6 +107,7 @@ const StreetsTab = ({ onConfirmDelete }) => {
         try {
           const res = await fetch(API_ENDPOINTS.STREETS.DETAIL(id), { method: 'DELETE' });
           if (res.ok) {
+            if (streetToDelete) updateGlobalCache(null, streetToDelete.name);
             queryClient.invalidateQueries({ queryKey: ['streets'] });
           }
         } catch (err) {

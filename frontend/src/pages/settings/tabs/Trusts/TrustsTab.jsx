@@ -48,6 +48,7 @@ const TrustsTab = ({ onConfirmDelete }) => {
       const totalPages = Math.ceil(lastPage.total / lastPage.per_page);
       return lastPage.page < totalPages ? lastPage.page + 1 : undefined;
     },
+    staleTime: 1000 * 60 * 5, // 5 minutes cache for tab switching
   });
 
   // Subscribe to real-time updates
@@ -57,6 +58,25 @@ const TrustsTab = ({ onConfirmDelete }) => {
     });
     return () => unsubscribe();
   }, [queryClient]);
+
+  const updateGlobalTrustCache = (newTrust, oldTrustId = null) => {
+    try {
+      const saved = sessionStorage.getItem('global_cached_trusts');
+      let trusts = saved ? JSON.parse(saved) : [];
+      
+      if (oldTrustId) {
+        trusts = trusts.filter(t => t.id !== oldTrustId);
+      }
+      
+      if (newTrust) {
+        // If edit, replace old one
+        trusts = trusts.filter(t => t.id !== newTrust.id);
+        trusts.push(newTrust);
+      }
+      
+      sessionStorage.setItem('global_cached_trusts', JSON.stringify(trusts));
+    } catch (err) { console.error("Global cache update failed:", err); }
+  };
 
   useEffect(() => {
     fetchCategories();
@@ -96,14 +116,20 @@ const TrustsTab = ({ onConfirmDelete }) => {
       ? API_ENDPOINTS.TRUSTS.DETAIL(editModal.data.id)
       : API_ENDPOINTS.TRUSTS.CREATE;
     
+    const submissionData = {
+      ...editModal.data,
+      name: editModal.data.name.toUpperCase().trim()
+    };
+    
     try {
       const response = await fetch(url, {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editModal.data)
+        body: JSON.stringify(submissionData)
       });
       if (response.ok) {
         const savedTrust = await response.json();
+        updateGlobalTrustCache(savedTrust, isEdit ? savedTrust.id : null);
         setEditModal({ isOpen: false, mode: 'edit', data: null });
         queryClient.invalidateQueries({ queryKey: ['trusts'] });
 
@@ -123,7 +149,7 @@ const TrustsTab = ({ onConfirmDelete }) => {
             sessionStorage.setItem('entry_trust_category_cache', JSON.stringify(cache));
           }
           
-          // Also clear general trusts list cache so the new name/details appear everywhere
+          // Clear general trusts list caches
           sessionStorage.removeItem('entry_cached_trusts');
           sessionStorage.removeItem('reports_cached_trusts_list');
           sessionStorage.removeItem('history_cached_trusts');
@@ -146,6 +172,7 @@ const TrustsTab = ({ onConfirmDelete }) => {
         try {
           const res = await fetch(API_ENDPOINTS.TRUSTS.DETAIL(id), { method: 'DELETE' });
           if (res.ok) {
+            updateGlobalTrustCache(null, id);
             queryClient.invalidateQueries({ queryKey: ['trusts'] });
           } else {
             const errData = await res.json();

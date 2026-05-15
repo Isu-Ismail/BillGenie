@@ -49,10 +49,9 @@ const Settings = () => {
     setTimeout(() => setIsRefreshing(false), 800);
   };
 
-  // Refetch when tab changes to ensure latest data
-  useEffect(() => {
-    queryClient.invalidateQueries({ queryKey: [activeTab] });
-  }, [activeTab, queryClient]);
+  // Tab content is cached for 5 minutes via staleTime in main.jsx and local configs.
+  // Manual refresh is available via the 'Reload Data' button.
+
 
   const showConfirm = (config) => {
     setConfirmModal({

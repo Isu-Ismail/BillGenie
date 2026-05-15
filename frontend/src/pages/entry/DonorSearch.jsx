@@ -11,12 +11,24 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [selectedDonor, setSelectedDonor] = useState(null);
+  const [cachedDonors, setCachedDonors] = useState(() => {
+    const saved = sessionStorage.getItem('global_cached_donors');
+    return saved ? JSON.parse(saved) : {};
+  });
   const containerRef = useRef(null);
+  const lastFetchedTerm = useRef('');
 
-  // Fetch initial selected donor if value exists
+  // Sync local selected donor with the value prop
   useEffect(() => {
-    if (value && !selectedDonor) {
-       fetchDonorById(value);
+    if (value) {
+      // Only fetch if we don't have it or if the ID changed
+      if (!selectedDonor || selectedDonor.id !== value) {
+        fetchDonorById(value);
+      }
+    } else {
+      // If value is cleared from parent (e.g. on form reset), clear local state
+      setSelectedDonor(null);
+      setSearchTerm('');
     }
   }, [value]);
 
@@ -34,13 +46,28 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      if (isOpen) {
-        searchDonors(searchTerm);
+      if (isOpen && searchTerm.trim()) {
+        // LOCAL FILTER FIRST
+        const query = searchTerm.toLowerCase();
+        const localMatches = Object.values(cachedDonors).filter(d => 
+          d.name.toLowerCase().includes(query) || 
+          (d.mobile && d.mobile.includes(query)) ||
+          (d.street && d.street.toLowerCase().includes(query))
+        );
+
+        if (localMatches.length > 0) {
+          setFilteredDonors(localMatches.slice(0, 20));
+        }
+
+        // Only search remote if local matches are few or it's a new term
+        if (localMatches.length < 5 && searchTerm !== lastFetchedTerm.current) {
+          searchDonors(searchTerm);
+        }
       }
-    }, 300);
+    }, 1500); // Faster debounce for better feel
 
     return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm, isOpen]);
+  }, [searchTerm, isOpen, cachedDonors]);
 
   const searchDonors = async (query) => {
     setLoading(true);
@@ -49,8 +76,18 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
       if (res.ok) {
         const data = await res.json();
         const items = data.items || [];
+        lastFetchedTerm.current = query;
+
+        // MERGE INTO CACHE
+        setCachedDonors(prev => {
+          const updated = { ...prev };
+          items.forEach(item => { updated[item.id] = item; });
+          sessionStorage.setItem('global_cached_donors', JSON.stringify(updated));
+          return updated;
+        });
+
         setFilteredDonors(items);
-        setHighlightedIndex(0); // Reset highlighted to top on every search
+        setHighlightedIndex(0);
       }
     } catch (err) {
       console.error("Search error:", err);

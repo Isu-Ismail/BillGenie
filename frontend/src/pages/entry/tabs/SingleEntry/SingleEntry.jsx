@@ -1,6 +1,8 @@
 import React from 'react';
 import { Plus, PlusCircle, X, Trash2, ChevronDown } from 'lucide-react';
 import DonorSearch from '../../DonorSearch';
+import TrustSelect from '../../TrustSelect';
+import CategorySelect from '../../CategorySelect';
 import styles from './SingleEntry.module.css';
 
 const SingleEntry = ({
@@ -150,14 +152,10 @@ const SingleEntry = ({
               style={{ textTransform: 'uppercase' }}
             />
           ) : (
-            <select 
+            <TrustSelect 
               value={entry.trust_id}
-              onChange={(e) => handleEntryChange(dIndex, 'trust_id', e.target.value)}
-              required
-            >
-              <option value="">Select Organization</option>
-              {trusts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
+              onChange={(val) => handleEntryChange(dIndex, 'trust_id', val)}
+            />
           )}
         </div>
 
@@ -191,23 +189,17 @@ const SingleEntry = ({
 
                 return (
                   <div key={iIndex} className={styles.worksheetRow}>
-                    <label className={styles.worksheetLabel}>
+                    <div className={styles.categorySelectWrapper}>
                       {cat ? (
-                        <span>{cat.name}</span>
+                        <span className={styles.categoryLabel}>{cat.name}</span>
                       ) : (
-                        <select 
-                          className={styles.compactSelect}
+                        <CategorySelect 
                           value={item.category_id}
-                          onChange={(e) => handleItemChange(dIndex, iIndex, 'category_id', e.target.value)}
-                          required
-                        >
-                          <option value="">Choose Category</option>
-                          {categories.map(c => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                          ))}
-                        </select>
+                          onChange={(val) => handleItemChange(dIndex, iIndex, 'category_id', val)}
+                          placeholder="Choose Category"
+                          isCompact={true}
+                        />
                       )}
-                      
                       <button 
                         type="button" 
                         onClick={() => removeItemRow(dIndex, iIndex)}
@@ -216,7 +208,7 @@ const SingleEntry = ({
                       >
                         <X size={12} />
                       </button>
-                    </label>
+                    </div>
                     <div className={styles.worksheetInputGroup}>
                       <span className={styles.currency}>₹</span>
                       <input 

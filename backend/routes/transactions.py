@@ -24,6 +24,9 @@ async def get_transactions(
     donor_id: Optional[str] = None, 
     hijri_year: Optional[str] = None,
     trust_id: Optional[str] = None,
+    street: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
     page: int = 1,
     per_page: int = 10
 ):
@@ -35,6 +38,12 @@ async def get_transactions(
             filters.append(f'hijri_year = "{hijri_year}"')
         if trust_id and trust_id.strip():
             filters.append(f'trust_id = "{trust_id}"')
+        if street and street.strip():
+            filters.append(f'donor_id.street = "{street}"')
+        if from_date and from_date.strip():
+            filters.append(f'payment_date >= "{from_date} 00:00:00"')
+        if to_date and to_date.strip():
+            filters.append(f'payment_date <= "{to_date} 23:59:59"')
             
         filter_str = " && ".join(filters) if filters else ""
 

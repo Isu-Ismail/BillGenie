@@ -34,46 +34,67 @@ def authenticate_admin():
 thread = threading.Thread(target=authenticate_admin, daemon=True)
 thread.start()
 
-def get_cached_data(trust_id, data_type, field=""):
+def get_cached_data(data_type, filters_dict=None):
+    """
+    Fetches cached data based on data_type and filters.
+    If filters_dict is None, returns the LATEST created metadata for that type.
+    """
     try:
-        # Handle "all" case
-        t_id = trust_id or "all"
-        cache_key = f"{t_id}_{data_type}_{field or 'all'}"
+        query_params = {
+            "filter": f'data_type = "{data_type}"',
+            "sort": "-created",
+        }
         
-        result = pb.collection('metadata').get_list(1, 1, {
-            "filter": f'trust = "{cache_key}"'
-        })
+        # We fetch a few to find the exact match in Python since deep JSON filtering 
+        # is complex in standard PocketBase filter strings.
+        result = pb.collection('metadata').get_list(1, 20, query_params)
         
-        if result.items:
-            return result.items[0].value
-        return None
+        if not filters_dict:
+            # Just return the latest one found (Dashboard use case)
+            if result.items:
+                return result.items[0].value, result.items[0].field
+            return None, None
+            
+        # If specific filters are provided, look for an exact match
+        for item in result.items:
+            # Simple dictionary comparison
+            if item.field == filters_dict:
+                return item.value, item.field
+                
+        return None, None
     except Exception as e:
         print(f"Cache check failed: {e}")
-        return None
+        return None, None
 
-def update_cached_data(trust_id, data_type, data, field=""):
+def update_cached_data(data_type, data, filters_dict):
+    """
+    Updates or creates a cache entry for a specific data_type and filter set.
+    """
     try:
-        t_id = trust_id or "all"
-        cache_key = f"{t_id}_{data_type}_{field or 'all'}"
-        
-        # Prepare value with timestamp
         import datetime
+        # Prepare value with timestamp
         data["last_generated"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         data["is_cached"] = True
         
-        existing = pb.collection('metadata').get_list(1, 1, {
-            "filter": f'trust = "{cache_key}"'
+        # Check for existing record with EXACT same filters to update it
+        existing = pb.collection('metadata').get_list(1, 20, {
+            "filter": f'data_type = "{data_type}"'
         })
         
+        target_id = None
+        for item in existing.items:
+            if item.field == filters_dict:
+                target_id = item.id
+                break
+        
         payload = {
-            "trust": cache_key,
             "value": data,
             "data_type": data_type,
-            "field": field or "all"
+            "field": filters_dict
         }
         
-        if existing.items:
-            pb.collection('metadata').update(existing.items[0].id, payload)
+        if target_id:
+            pb.collection('metadata').update(target_id, payload)
         else:
             pb.collection('metadata').create(payload)
             

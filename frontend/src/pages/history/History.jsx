@@ -15,10 +15,13 @@ import {
   Plus,
   CheckCircle,
   Clock,
+  ChevronDown,
   RefreshCcw
 } from 'lucide-react';
 import styles from './History.module.css';
 import DonorSearch from '../entry/DonorSearch';
+import TrustSelect from '../entry/TrustSelect';
+import StreetSelect from '../entry/StreetSelect';
 import { useHistory } from '../../context/HistoryContext';
 import { API_ENDPOINTS } from '../../api';
 
@@ -35,10 +38,20 @@ const History = () => {
   const [hasMore, setHasMore] = useState(true);
   const [itemsPerRow, setItemsPerRow] = useState(3);
   const [trusts, setTrusts] = useState(() => {
-    const saved = sessionStorage.getItem('history_cached_trusts');
+    const saved = sessionStorage.getItem('global_cached_trusts');
     return saved ? JSON.parse(saved) : [];
   });
-  const [filters, setFilters] = useState({ ...lastFilters });
+  const [streets, setStreets] = useState(() => {
+    const saved = sessionStorage.getItem('global_cached_streets');
+    const parsed = saved ? JSON.parse(saved) : [];
+    // Safeguard: Convert objects to strings if they exist in cache
+    return parsed.map(s => typeof s === 'object' ? s.name : s);
+  });
+  const [filters, setFilters] = useState({ 
+    from_date: '',
+    to_date: '',
+    ...lastFilters 
+  });
   
   // Edit Modal State
   const [editModal, setEditModal] = useState({ show: false, transaction: null });
@@ -46,27 +59,45 @@ const History = () => {
 
   const fetchTrusts = async () => {
     try {
-      // Fetch all trusts for the filter dropdown
       const res = await fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=20`);
       const data = await res.json();
       const items = data.items || [];
       setTrusts(items);
-      sessionStorage.setItem('history_cached_trusts', JSON.stringify(items));
+      sessionStorage.setItem('global_cached_trusts', JSON.stringify(items));
+      return items;
     } catch (err) {
       console.error("Fetch trusts failed:", err);
+      return [];
+    }
+  };
+
+  const fetchStreets = async () => {
+    try {
+      const res = await fetch(`${API_ENDPOINTS.STREETS.BASE}?per_page=20`);
+      const data = await res.json();
+      const items = (data.items || []).map(s => s.name);
+      setStreets(items);
+      sessionStorage.setItem('global_cached_streets', JSON.stringify(items));
+      return items;
+    } catch (err) {
+      console.error("Fetch streets failed:", err);
+      return [];
     }
   };
 
   useEffect(() => {
     const init = async () => {
-      // Calculate initial items per row
       const cols = calculateItemsPerRow();
       setItemsPerRow(cols);
 
-      if (categories.length === 0) await fetchCategories();
-      if (trusts.length === 0) await fetchTrusts();
+      // Parallel fetch metadata
+      const fetchers = [];
+      if (categories.length === 0) fetchers.push(fetchCategories());
+      if (trusts.length === 0) fetchers.push(fetchTrusts());
+      if (streets.length === 0) fetchers.push(fetchStreets());
       
-      // If we haven't loaded anything and have no cache, do first fetch
+      if (fetchers.length > 0) await Promise.all(fetchers);
+      
       if (!hasLoadedOnce && transactions.length === 0) {
         await fetchTransactions(1, true, cols * 3);
         setHasLoadedOnce(true);
@@ -125,15 +156,17 @@ const History = () => {
   const fetchTransactions = async (pageNum = 1, reset = false, perPageOverride = null) => {
     setLoading(true);
     try {
-      const { donor_id, hijri_year, all_user_tx, year_only, trust_id } = filters;
+      const { donor_id, hijri_year, trust_id, street, from_date, to_date } = filters;
       
-      const perPage = perPageOverride || (itemsPerRow * 3);
+      const perPage = perPageOverride || 9;
       let url = `${API_ENDPOINTS.TRANSACTIONS.BASE}?page=${pageNum}&per_page=${perPage}`;
       
-      if (donor_id && !year_only) url += `&donor_id=${donor_id}`;
-      // If 'All Transactions' is checked, we ignore the hijri_year filter
-      if (hijri_year && !all_user_tx) url += `&hijri_year=${hijri_year}`;
+      if (donor_id) url += `&donor_id=${donor_id}`;
+      if (hijri_year) url += `&hijri_year=${hijri_year}`;
       if (trust_id) url += `&trust_id=${trust_id}`;
+      if (street) url += `&street=${encodeURIComponent(street)}`;
+      if (from_date) url += `&from_date=${from_date}`;
+      if (to_date) url += `&to_date=${to_date}`;
       
       const res = await fetch(url);
 
@@ -384,7 +417,7 @@ const History = () => {
     const nextPage = page + 1;
     setPage(nextPage);
     // Fetch 3 rows based on current itemsPerRow
-    fetchTransactions(nextPage, false, itemsPerRow * 3);
+    fetchTransactions(nextPage, false, 9);
   };
 
 
@@ -475,73 +508,70 @@ const History = () => {
 
 
       <form onSubmit={handleSearch} className={styles.filterBar}>
-        <div className={styles.trustFilterSection}>
-          <label>Trust</label>
-          <select 
-            value={filters.trust_id} 
-            onChange={(e) => setFilters({...filters, trust_id: e.target.value})}
-            className={styles.trustSelectInput}
-          >
-            <option value="">All Trusts</option>
-            {trusts.map(trust => (
-              <option key={trust.id} value={trust.id}>{trust.name}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className={styles.donorFilter}>
-
-           <div className={styles.labelWithCheckbox}>
-             <label>Donor</label>
-             <label className={styles.customCheckbox}>
-               <input 
-                 type="checkbox" 
-                 checked={filters.year_only} 
-                 onChange={(e) => setFilters({...filters, year_only: e.target.checked})}
-               />
-               <span className={styles.checkmark}></span>
-               Search Year Wise
-             </label>
-           </div>
-           <DonorSearch 
-             value={filters.donor_id}
-             onChange={(val) => setFilters({...filters, donor_id: val})}
-             placeholder="Search by name..."
-             disabled={filters.year_only}
-           />
-        </div>
-        <div className={styles.yearFilter}>
-          <div className={styles.labelWithCheckbox}>
-            <label>Hijri Year</label>
-            <label className={styles.customCheckbox}>
-              <input 
-                type="checkbox" 
-                checked={filters.all_user_tx} 
-                disabled={filters.year_only}
-                onChange={(e) => setFilters({...filters, all_user_tx: e.target.checked})}
-              />
-              <span className={styles.checkmark}></span>
-              All Years
-            </label>
+        <div className={styles.filterScrollArea}>
+          <div className={styles.donorFilter}>
+             <DonorSearch 
+               value={filters.donor_id}
+               onChange={(val) => setFilters({...filters, donor_id: val})}
+               placeholder="Donor Name..."
+             />
           </div>
-          <input 
-            type="text"
-            placeholder="e.g. 1446"
-            value={filters.hijri_year}
-            disabled={filters.all_user_tx}
-            onChange={(e) => setFilters({...filters, hijri_year: e.target.value})}
-          />
+
+          <div className={styles.yearFilter}>
+            <input 
+              type="text"
+              placeholder="Hijri Year (e.g. 1446)"
+              value={filters.hijri_year}
+              onChange={(e) => setFilters({...filters, hijri_year: e.target.value})}
+            />
+          </div>
+
+          <div className={styles.filterSection}>
+            <TrustSelect 
+              value={filters.trust_id}
+              onChange={(val) => setFilters({...filters, trust_id: val})}
+              placeholder="Select Trust"
+            />
+          </div>
+
+          <div className={styles.filterSection}>
+            <StreetSelect 
+              value={filters.street}
+              onChange={(val) => setFilters({...filters, street: val})}
+              placeholder="Select Street"
+            />
+          </div>
+
+          <div className={styles.filterSection}>
+            <input 
+              type="date"
+              value={filters.from_date}
+              onChange={(e) => setFilters({...filters, from_date: e.target.value})}
+              className={styles.dateInput}
+              title="From Date"
+            />
+          </div>
+
+          <div className={styles.filterSection}>
+            <input 
+              type="date"
+              value={filters.to_date}
+              onChange={(e) => setFilters({...filters, to_date: e.target.value})}
+              className={styles.dateInput}
+              title="To Date"
+            />
+          </div>
         </div>
+
         <div className={styles.filterButtons}>
           <button type="submit" className={styles.searchBtn} disabled={loading}>
             <Search size={18} /> Search
           </button>
 
           <button type="button" className={styles.resetBtn} onClick={() => {
-            setFilters({ donor_id: '', hijri_year: '', all_user_tx: false, year_only: false, trust_id: '' });
+            setFilters({ donor_id: '', hijri_year: '', trust_id: '', street: '', from_date: '', to_date: '' });
             setTimeout(() => handleReload(), 10);
           }}>
-
             Clear
           </button>
         </div>
@@ -642,7 +672,7 @@ const History = () => {
       {hasMore && (
         <div className={styles.loadMoreWrapper}>
           <button className={styles.loadMoreBtn} onClick={loadMore} disabled={loading}>
-            {loading ? 'Loading...' : `Load More (${itemsPerRow * 3} per page)`}
+            {loading ? 'Loading...' : 'Load More'}
           </button>
         </div>
       )}
@@ -661,14 +691,11 @@ const History = () => {
                   <div className={styles.editMetaSection}>
                     <div className={styles.trustGroup}>
                       <label>Trust</label>
-                      <select 
+                      <TrustSelect 
                         value={editModal.transaction.trust_id || ''}
-                        onChange={(e) => setEditModal({ ...editModal, transaction: { ...editModal.transaction, trust_id: e.target.value } })}
-                        className={styles.modalInput}
-                      >
-                        <option value="">No Trust</option>
-                        {trusts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                      </select>
+                        onChange={(val) => setEditModal({ ...editModal, transaction: { ...editModal.transaction, trust_id: val } })}
+                        placeholder="No Trust"
+                      />
                     </div>
                     <div className={styles.yearGroup}>
                       <label>Hijri Year</label>
@@ -739,4 +766,4 @@ const History = () => {
 };
 
 export default History;
-
+

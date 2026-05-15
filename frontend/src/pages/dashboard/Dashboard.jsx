@@ -16,6 +16,7 @@ import {
 
 import { useNavigate } from 'react-router-dom';
 import styles from './Dashboard.module.css';
+import TrustSelect from '../entry/TrustSelect';
 import { API_ENDPOINTS } from '../../api';
 
 
@@ -27,7 +28,7 @@ const Dashboard = () => {
   });
   const [loading, setLoading] = useState(!statsData);
   const [trusts, setTrusts] = useState(() => {
-    const saved = sessionStorage.getItem('dashboard_cached_trusts');
+    const saved = sessionStorage.getItem('global_cached_trusts');
     return saved ? JSON.parse(saved) : [];
   });
   const [categories, setCategories] = useState(() => {
@@ -39,6 +40,9 @@ const Dashboard = () => {
     hijri_year: sessionStorage.getItem('dashboard_selected_year') || '' 
   });
 
+  const hasFetched = React.useRef(false);
+  const isFirstRender = React.useRef(true);
+
   useEffect(() => {
     sessionStorage.setItem('dashboard_selected_trust', filters.trust_id);
     sessionStorage.setItem('dashboard_selected_year', filters.hijri_year);
@@ -47,7 +51,7 @@ const Dashboard = () => {
   const fetchInitialData = async () => {
     try {
       const [tRes, cRes] = await Promise.all([
-        fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=100`),
+        fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=20`),
         fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=100`)
       ]);
       const tData = await tRes.json();
@@ -57,7 +61,7 @@ const Dashboard = () => {
       setTrusts(trustList);
       setCategories(categoryList);
       
-      sessionStorage.setItem('dashboard_cached_trusts', JSON.stringify(trustList));
+      sessionStorage.setItem('global_cached_trusts', JSON.stringify(trustList));
       sessionStorage.setItem('dashboard_cached_categories', JSON.stringify(categoryList));
 
       if (!filters.trust_id && trustList.length > 0) {
@@ -68,23 +72,25 @@ const Dashboard = () => {
     }
   };
 
+  const lastFetchedRef = React.useRef("");
+
   const fetchStats = async () => {
-    if (!filters.trust_id) return;
+    // Always call the base endpoint without params to get the LATEST metadata cache
     setLoading(true);
     try {
-      let url = `${API_ENDPOINTS.STATS.BASE}?`;
-      if (filters.trust_id) url += `trust_id=${filters.trust_id}&`;
-      if (filters.hijri_year) url += `hijri_year=${filters.hijri_year}`;
-      
-      const res = await fetch(url);
+      const res = await fetch(API_ENDPOINTS.STATS.BASE);
       const data = await res.json();
+      
       if (data.status) {
-        if (data.needs_refresh) {
-          await handleManualRefresh();
-        } else {
-          setStatsData(data);
-          sessionStorage.setItem('dashboard_cached_stats', JSON.stringify(data));
+        // Sync filters from the backend cache fields if they exist
+        if (data.filters) {
+          setFilters({
+            trust_id: data.filters.trust_id || '',
+            hijri_year: data.filters.hijri_year || ''
+          });
         }
+        setStatsData(data);
+        sessionStorage.setItem('dashboard_cached_stats', JSON.stringify(data));
       }
     } catch (err) {
       console.error("Failed to fetch dashboard stats:", err);
@@ -103,6 +109,13 @@ const Dashboard = () => {
       const res = await fetch(url, { method: 'POST' });
       const data = await res.json();
       if (data.status) {
+        // Sync filters from response just in case
+        if (data.filters) {
+          setFilters({
+            trust_id: data.filters.trust_id || '',
+            hijri_year: data.filters.hijri_year || ''
+          });
+        }
         setStatsData(data);
         sessionStorage.setItem('dashboard_cached_stats', JSON.stringify(data));
       }
@@ -114,19 +127,25 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
+    if (hasFetched.current) return;
+    hasFetched.current = true;
+
     const init = async () => {
-      // 1. Fetch master data if missing
+      // 1. Fetch master data if missing from state
       if (trusts.length === 0 || categories.length === 0) {
         await fetchInitialData();
       }
       
-      // 2. Fetch stats if we don't have them for the CURRENT filters
-      if (!statsData && filters.trust_id) {
+      // 2. Fetch stats ONLY if we don't have them in cache (sessionStorage)
+      if (!statsData) {
         await fetchStats();
       }
     };
     init();
-  }, [filters.trust_id, filters.hijri_year]);
+  }, []); // Run ONCE on mount
+
+  // Note: Automatic fetching on filter change is disabled per user request.
+  // User will click "Update Stats" to refresh the data.
 
 
   const getCategoryName = (id) => {
@@ -157,13 +176,11 @@ const Dashboard = () => {
           <p className={styles.subtitle}>Financial performance across all trusts</p>
         </div>
         <div className={styles.actions}>
-          <select 
-            className={styles.trustFilter}
+          <TrustSelect 
             value={filters.trust_id}
-            onChange={(e) => setFilters({...filters, trust_id: e.target.value})}
-          >
-            {trusts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
+            onChange={(val) => setFilters({...filters, trust_id: val})}
+            placeholder="Select Trust"
+          />
           <input 
             type="text" 
             placeholder="Year (e.g. 1446)" 
