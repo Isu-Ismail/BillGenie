@@ -1,4 +1,5 @@
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const BASE_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api`;
+
 
 
 export const API_ENDPOINTS = {

@@ -40,7 +40,7 @@ async def create_new_entry(request_data: Union[NewEntryRequest, List[NewEntryReq
             # 0. Handle Trust
             trust_id = entry.trust_id
             if not trust_id and entry.trust_name:
-                trust_name_clean = entry.trust_name.strip()
+                trust_name_clean = entry.trust_name.strip().upper()
                 existing_trusts = pb.collection('trusts').get_list(1, 1, {
                     "filter": f'name = "{escape_pb_filter(trust_name_clean)}"'
                 })
@@ -139,6 +139,10 @@ async def import_excel(
         all_trusts = pb.collection('trusts').get_full_list()
         trust_map = {t.name.upper().strip(): t.id for t in all_trusts}
 
+        # 2.5 Map existing streets
+        all_streets = pb.collection('streets').get_full_list()
+        street_set = {s.name.upper().strip() for s in all_streets}
+
         # 3. Identify and CREATE missing categories & trusts from Excel columns/rows
         special_cols = ["DONOR NAME", "DOOR NO", "STREET", "MOBILE", "TOTAL", "TRUST NAME", "GENDER", "HIJRI YEAR"]
         
@@ -148,9 +152,9 @@ async def import_excel(
             col_upper = col_name.upper()
             if col_upper not in special_cols and col_upper not in cat_map:
                 try:
-                    new_cat = pb.collection('categories').create({"name": col_name, "is_active": True})
+                    new_cat = pb.collection('categories').create({"name": col_upper, "is_active": True})
                     cat_map[col_upper] = new_cat.id
-                    print(f"Auto-created category: {col_name}")
+                    print(f"Auto-created category: {col_upper}")
                 except Exception as e: print(f"Error creating category {col_name}: {e}")
 
         # 4. Process Rows
@@ -159,14 +163,25 @@ async def import_excel(
 
         for _, row in df.iterrows():
             try:
-                name = str(row.get("DONOR NAME", "")).strip()
+                name = str(row.get("DONOR NAME", "")).strip().upper()
                 if not name or name.lower() == "nan": continue
                 
-                door_no = str(row.get("DOOR NO", "")).replace(".0", "") if pd.notna(row.get("DOOR NO")) else ""
-                street = str(row.get("STREET", "")) if pd.notna(row.get("STREET")) else ""
-                mobile = str(row.get("MOBILE", "")).replace(".0", "") if pd.notna(row.get("MOBILE")) else ""
+                door_no = str(row.get("DOOR NO", "")).replace(".0", "").strip().upper() if pd.notna(row.get("DOOR NO")) else ""
+                street_raw = str(row.get("STREET", "")).strip() if pd.notna(row.get("STREET")) else ""
+                street = street_raw.upper()
+                
+                # Auto-create street if missing
+                if street and street not in street_set:
+                    try:
+                        pb.collection('streets').create({"name": street})
+                        street_set.add(street)
+                        print(f"Auto-created street: {street}")
+                    except Exception as e:
+                        print(f"Error creating street {street}: {e}")
+
+                mobile = str(row.get("MOBILE", "")).replace(".0", "").strip() if pd.notna(row.get("MOBILE")) else ""
                 gender = str(row.get("GENDER", "M")).strip().upper()[:1] or "M"
-                excel_trust_name = str(row.get("TRUST NAME", "")).strip()
+                excel_trust_name = str(row.get("TRUST NAME", "")).strip().upper()
                 
                 # Use HIJRI YEAR from row if present, otherwise fallback to form value
                 row_hijri_year = str(row.get("HIJRI YEAR", hijri_year)).replace(".0", "").strip()

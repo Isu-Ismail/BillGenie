@@ -40,47 +40,67 @@ async def list_donors(
             }
 
         # FUZZY SEARCH
-        # 1. Fetch all donors (for smaller/medium datasets this is very fast)
-        all_donors = pb.collection('donors').get_full_list()
-        
-        # 2. Extract matches using rapidfuzz
-        donor_map = {r.id: r for r in all_donors}
-        choices = {r.id: f"{r.name} {getattr(r, 'mobile', '')} {getattr(r, 'street', '')}" for r in all_donors}
-        
-        # Use WRatio for better natural language matching (handles typos, word order, etc.)
-        matches = process.extract(
-            search, 
-            choices, 
-            scorer=fuzz.WRatio, 
-            limit=100 # Get top 100 matches
-        )
-        
-        # 3. Filter by threshold and format
-        items = []
-        for match_text, score, donor_id in matches:
-            if score > 45: # Forgiving threshold for typos
-                r = donor_map[donor_id]
-                items.append({
-                    "id": r.id,
-                    "name": r.name,
-                    "door_no": getattr(r, 'door_no', ''),
-                    "street": getattr(r, 'street', ''),
-                    "mobile": getattr(r, 'mobile', ''),
-                    "gender": getattr(r, 'gender', ''),
-                    "score": score
-                })
-        
-        # 4. Handle pagination for fuzzy results
-        start = (page - 1) * per_page
-        end = start + per_page
-        paginated_items = items[start:end]
-        
-        return {
-            "items": paginated_items,
-            "total": len(items),
-            "page": page,
-            "per_page": per_page
-        }
+        # 1. Try Fuzzy Search first
+        try:
+            all_donors = pb.collection('donors').get_full_list()
+            
+            search_lower = search.lower()
+            donor_map = {r.id: r for r in all_donors}
+            choices = {
+                r.id: f"{getattr(r, 'name', '').lower()} {getattr(r, 'mobile', '').lower()} {getattr(r, 'street', '').lower()}" 
+                for r in all_donors
+            }
+            
+            matches = process.extract(search_lower, choices, scorer=fuzz.WRatio, limit=100)
+            
+            items = []
+            for match_text, score, donor_id in matches:
+                if score > 45:
+                    r = donor_map[donor_id]
+                    items.append({
+                        "id": r.id,
+                        "name": r.name,
+                        "door_no": getattr(r, 'door_no', ''),
+                        "street": getattr(r, 'street', ''),
+                        "mobile": getattr(r, 'mobile', ''),
+                        "gender": getattr(r, 'gender', ''),
+                        "score": score
+                    })
+            
+            start = (page - 1) * per_page
+            end = start + per_page
+            print(f"DEBUG: Returning {len(items)} fuzzy matches: {[i['name'] for i in items[:5]]}...")
+            return {
+                "items": items[start:end],
+                "total": len(items),
+                "page": page,
+                "per_page": per_page
+            }
+        except Exception as fuzzy_err:
+            print(f"Fuzzy search failed, falling back to standard: {fuzzy_err}")
+            # Fallback to standard PocketBase search
+            from db import escape_pb_filter
+            search_esc = escape_pb_filter(search)
+            filter_str = f'name ~ "{search_esc}" || mobile ~ "{search_esc}" || street ~ "{search_esc}"'
+            
+            result = pb.collection('donors').get_list(page, per_page, {"filter": filter_str})
+            print(f"DEBUG: Returning {len(result.items)} standard fallback matches.")
+            return {
+                "items": [
+                    {
+                        "id": r.id,
+                        "name": r.name,
+                        "door_no": getattr(r, 'door_no', ''),
+                        "street": getattr(r, 'street', ''),
+                        "mobile": getattr(r, 'mobile', ''),
+                        "gender": getattr(r, 'gender', '')
+                    }
+                    for r in result.items
+                ],
+                "total": result.total_items,
+                "page": result.page,
+                "per_page": result.per_page
+            }
     except Exception as e:
         print(f"ERROR listing donors: {e}")
         return {"items": [], "total": 0}

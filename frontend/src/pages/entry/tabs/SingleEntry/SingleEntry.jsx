@@ -186,12 +186,13 @@ const SingleEntry = ({
             <div className={styles.worksheetGrid}>
               {entry.items.map((item, iIndex) => {
                 const cat = categories.find(c => c.id === item.category_id);
+                const catName = cat ? cat.name : item.category_name;
 
                 return (
                   <div key={iIndex} className={styles.worksheetRow}>
                     <div className={styles.categorySelectWrapper}>
-                      {cat ? (
-                        <span className={styles.categoryLabel}>{cat.name}</span>
+                      {catName ? (
+                        <span className={styles.categoryLabel}>{catName}</span>
                       ) : (
                         <CategorySelect 
                           value={item.category_id}

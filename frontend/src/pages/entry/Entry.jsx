@@ -28,6 +28,20 @@ import ConfirmModal from '../../components/ConfirmModal';
 import StreetSelect from './StreetSelect';
 
 const Entry = () => {
+  // Cache validation / namespacing
+  useEffect(() => {
+    const CACHE_VERSION = `v2.2_${window.location.origin}`;
+    const savedVersion = localStorage.getItem('billgenie_cache_version');
+    if (savedVersion !== CACHE_VERSION) {
+      console.log("♻️ Data source or version change detected. Resetting local caches...");
+      sessionStorage.removeItem('global_cached_trusts');
+      sessionStorage.removeItem('entry_cached_categories');
+      sessionStorage.removeItem('entry_trust_category_cache');
+      sessionStorage.removeItem('global_cached_streets');
+      sessionStorage.removeItem('global_cached_donors');
+      localStorage.setItem('billgenie_cache_version', CACHE_VERSION);
+    }
+  }, []);
 
 
   const [trusts, setTrusts] = useState(() => {
@@ -42,9 +56,11 @@ const Entry = () => {
 
   useEffect(() => {
     const init = async () => {
-      // 1. Fetch master data if missing
+      // Always fetch fresh master data in background, but don't block if we have cache
+      const fetchPromise = fetchData();
+      
       if (trusts.length === 0 || categories.length === 0) {
-        await fetchData();
+        await fetchPromise;
       }
       
       // 2. Fetch categories for the pre-filled trust
@@ -186,6 +202,7 @@ const Entry = () => {
           if (newEntries[donorIndex]) {
             newEntries[donorIndex].items = cachedData.assigned.map(cat => ({
               category_id: cat.id,
+              category_name: cat.name,
               amount: '',
               isAssigned: true
             }));
@@ -211,6 +228,7 @@ const Entry = () => {
             if (newEntries[donorIndex]) {
               newEntries[donorIndex].items = data.assigned.map(cat => ({
                 category_id: cat.id,
+                category_name: cat.name,
                 amount: '',
                 isAssigned: true
               }));
@@ -229,8 +247,8 @@ const Entry = () => {
   const fetchData = async () => {
     try {
       const [catRes, trustRes] = await Promise.all([
-        fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=100`),
-        fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=20`)
+        fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=500`),
+        fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=500`)
       ]);
       
       if (catRes.ok) {
@@ -360,6 +378,14 @@ const Entry = () => {
       if (response.ok) {
         setMessage({ type: 'success', text: data.message });
         setShowImportModal(false);
+        
+        // Refresh master data (trusts, categories)
+        await fetchData();
+        
+        // Clear specific caches to force re-fetch
+        sessionStorage.removeItem('entry_trust_category_cache');
+        sessionStorage.removeItem('global_cached_streets');
+        
       } else {
         throw new Error(data.detail || 'Import failed');
       }
@@ -392,6 +418,7 @@ const Entry = () => {
         if (response.ok) {
           await fetchData(); // Refresh donors list
           setShowImportModal(false);
+          sessionStorage.removeItem('global_cached_streets');
           setMessage({ type: 'success', text: `Successfully imported ${donorsToImport.length} donors!` });
         } else {
           throw new Error('Failed to import donors');
@@ -418,6 +445,7 @@ const Entry = () => {
       if (cached && cached.assigned.length > 0) {
         newItems = cached.assigned.map(cat => ({
           category_id: cat.id,
+          category_name: cat.name,
           amount: '',
           isAssigned: true
         }));

@@ -12,6 +12,11 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
   const [loading, setLoading] = useState(false);
   const [selectedDonor, setSelectedDonor] = useState(null);
   const [cachedDonors, setCachedDonors] = useState(() => {
+    // Detect if we should use a clean cache
+    const CACHE_VERSION = `v2.2_${window.location.origin}`;
+    const savedVersion = localStorage.getItem('billgenie_cache_version');
+    if (savedVersion !== CACHE_VERSION) return {};
+    
     const saved = sessionStorage.getItem('global_cached_donors');
     return saved ? JSON.parse(saved) : {};
   });
@@ -64,7 +69,7 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
           searchDonors(searchTerm);
         }
       }
-    }, 1500); // Faster debounce for better feel
+    }, 500); // 500ms debounce for faster feel
 
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, isOpen, cachedDonors]);
@@ -72,7 +77,8 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
   const searchDonors = async (query) => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_ENDPOINTS.DONORS.BASE}?search=${encodeURIComponent(query)}&per_page=20`);
+      const upperQuery = query.toUpperCase();
+      const res = await fetch(`${API_ENDPOINTS.DONORS.BASE}?search=${encodeURIComponent(upperQuery)}&per_page=20`);
       if (res.ok) {
         const data = await res.json();
         const items = data.items || [];
