@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Query, Header
+from pydantic import BaseModel, model_validator
 from typing import Optional, List
 from db import pb
 from rapidfuzz import process, fuzz
@@ -10,15 +10,27 @@ class StreetRequest(BaseModel):
     name: str
     description: Optional[str] = ""
 
+    @model_validator(mode='before')
+    def strip_strings(cls, values):
+        if isinstance(values, dict):
+            for k, v in values.items():
+                if isinstance(v, str):
+                    values[k] = v.strip()
+        return values
+
 @router.get("/")
 async def list_streets(
     search: Optional[str] = Query(None),
     page: int = 1,
-    per_page: int = 20
+    per_page: int = 20,
+    x_user_id: Optional[str] = Header(None)
 ):
     try:
         if not search:
-            result = pb.collection('streets').get_list(page, per_page)
+            query_params = {}
+            if x_user_id:
+                query_params["filter"] = f'created_by = "{x_user_id}"'
+            result = pb.collection('streets').get_list(page, per_page, query_params)
             return {
                 "items": [
                     {
@@ -36,7 +48,10 @@ async def list_streets(
         # 1. Try Fuzzy Search first
         try:
             search_lower = search.lower()
-            all_streets = pb.collection('streets').get_full_list()
+            query_params = {}
+            if x_user_id:
+                query_params["filter"] = f'created_by = "{x_user_id}"'
+            all_streets = pb.collection('streets').get_full_list(query_params=query_params)
             choices = {
                 r.id: f"{getattr(r, 'name', '').lower()} {getattr(r, 'description', '').lower()}" 
                 for r in all_streets
@@ -67,9 +82,10 @@ async def list_streets(
             print(f"Fuzzy street search failed, falling back to standard: {fuzzy_err}")
             from db import escape_pb_filter
             search_esc = escape_pb_filter(search)
-            result = pb.collection('streets').get_list(page, per_page, {
-                "filter": f'name ~ "{search_esc}" || description ~ "{search_esc}"'
-            })
+            filter_str = f'name ~ "{search_esc}" || description ~ "{search_esc}"'
+            if x_user_id:
+                filter_str = f'({filter_str}) && created_by = "{x_user_id}"'
+            result = pb.collection('streets').get_list(page, per_page, {"filter": filter_str})
             return {
                 "items": [
                     {
@@ -88,10 +104,13 @@ async def list_streets(
         return {"items": [], "total": 0, "page": 1, "per_page": per_page}
 
 @router.post("/create/")
-async def create_street(street: StreetRequest):
+async def create_street(street: StreetRequest, x_user_id: Optional[str] = Header(None)):
     try:
         data = street.dict()
         data["name"] = data["name"].upper() # FORCE UPPERCASE
+        print(f"[DEBUG] create_street - x_user_id: {x_user_id}, payload: {data}")
+        if x_user_id:
+            data["created_by"] = x_user_id
         record = pb.collection('streets').create(data)
         return {"status": True, "msg": "Street created successfully", "id": record.id}
     except Exception as e:
@@ -99,10 +118,12 @@ async def create_street(street: StreetRequest):
         return {"status": False, "msg": str(e)}
 
 @router.put("/{street_id}")
-async def update_street(street_id: str, street: StreetRequest):
+async def update_street(street_id: str, street: StreetRequest, x_user_id: Optional[str] = Header(None)):
     try:
         data = street.dict()
         data["name"] = data["name"].upper() # FORCE UPPERCASE
+        if x_user_id:
+            data["created_by"] = x_user_id
         record = pb.collection('streets').update(street_id, data)
         return {"status": True, "msg": "Street updated successfully", "id": record.id}
     except Exception as e:

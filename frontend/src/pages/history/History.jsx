@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, 
   Filter, 
@@ -16,14 +16,17 @@ import {
   CheckCircle,
   Clock,
   ChevronDown,
-  RefreshCcw
+  RefreshCcw,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import styles from './History.module.css';
 import DonorSearch from '../entry/DonorSearch';
 import TrustSelect from '../entry/TrustSelect';
 import StreetSelect from '../entry/StreetSelect';
 import { useHistory } from '../../context/HistoryContext';
-import { API_ENDPOINTS } from '../../api';
+import { API_ENDPOINTS, getAuthHeaders } from '../../api';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const History = () => {
   const { 
@@ -37,12 +40,17 @@ const History = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [itemsPerRow, setItemsPerRow] = useState(3);
+  const userJson = localStorage.getItem('user');
+  const userId = userJson ? JSON.parse(userJson)?.id : 'default';
+  const TRUST_KEY = `global_cached_trusts_${userId}`;
+  const STREET_KEY = `global_cached_streets_${userId}`;
+
   const [trusts, setTrusts] = useState(() => {
-    const saved = sessionStorage.getItem('global_cached_trusts');
+    const saved = sessionStorage.getItem(TRUST_KEY);
     return saved ? JSON.parse(saved) : [];
   });
   const [streets, setStreets] = useState(() => {
-    const saved = sessionStorage.getItem('global_cached_streets');
+    const saved = sessionStorage.getItem(STREET_KEY);
     const parsed = saved ? JSON.parse(saved) : [];
     // Safeguard: Convert objects to strings if they exist in cache
     return parsed.map(s => typeof s === 'object' ? s.name : s);
@@ -55,15 +63,116 @@ const History = () => {
   
   // Edit Modal State
   const [editModal, setEditModal] = useState({ show: false, transaction: null });
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [confirmState, setConfirmState] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    onConfirm: () => {}
+  });
+
+  const [showFilters, setShowFilters] = useState(false);
+
+  const getActiveFiltersCount = () => {
+    let count = 0;
+    if (filters.hijri_year) count++;
+    if (filters.trust_id) count++;
+    if (filters.street) count++;
+    if (filters.from_date) count++;
+    if (filters.to_date) count++;
+    return count;
+  };
+
+  const clearFilter = (key) => {
+    const updated = { ...filters, [key]: '' };
+    setFilters(updated);
+    const cols = calculateItemsPerRow();
+    setPage(1);
+    fetchTransactions(1, true, cols * 3, updated);
+  };
+
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      setSelectedIds(transactions.map(t => t.id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleSelectOne = (id, checked) => {
+    if (checked) {
+      setSelectedIds(prev => [...prev, id]);
+    } else {
+      setSelectedIds(prev => prev.filter(x => x !== id));
+    }
+  };
+
+  const handleBatchDeleteClick = () => {
+    if (selectedIds.length === 0) return;
+    setConfirmState({
+      isOpen: true,
+      title: "Delete Selected Ledgers",
+      message: `Are you sure you want to delete the ${selectedIds.length} selected annual ledgers? This action cannot be undone.`,
+      confirmText: "Delete All",
+      onConfirm: () => performBatchDelete()
+    });
+  };
+
+  const performBatchDelete = async () => {
+    setLoading(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      const deletePromises = selectedIds.map(async (id) => {
+        try {
+          const res = await fetch(API_ENDPOINTS.TRANSACTIONS.DETAIL(id), {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+          });
+          if (res.ok) {
+            const result = await res.json();
+            if (result.status) {
+              successCount++;
+              return id;
+            }
+          }
+          failCount++;
+          return null;
+        } catch (err) {
+          failCount++;
+          return null;
+        }
+      });
+
+      const deletedIds = await Promise.all(deletePromises);
+      const successfulDeletes = deletedIds.filter(id => id !== null);
+
+      setTransactions(prev => prev.filter(t => !successfulDeletes.includes(t.id)));
+      setSelectedIds([]);
+
+      if (failCount === 0) {
+        setMessage({ type: 'success', text: `Successfully deleted ${successCount} ledgers.` });
+      } else {
+        setMessage({ type: 'error', text: `Deleted ${successCount} ledgers. Failed to delete ${failCount} ledgers.` });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Batch delete operations failed' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchTrusts = async () => {
     try {
-      const res = await fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=20`);
+      const res = await fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=20`, { headers: getAuthHeaders() });
       const data = await res.json();
       const items = data.items || [];
       setTrusts(items);
-      sessionStorage.setItem('global_cached_trusts', JSON.stringify(items));
+      sessionStorage.setItem(TRUST_KEY, JSON.stringify(items));
       return items;
     } catch (err) {
       console.error("Fetch trusts failed:", err);
@@ -73,11 +182,11 @@ const History = () => {
 
   const fetchStreets = async () => {
     try {
-      const res = await fetch(`${API_ENDPOINTS.STREETS.BASE}?per_page=20`);
+      const res = await fetch(`${API_ENDPOINTS.STREETS.BASE}?per_page=20`, { headers: getAuthHeaders() });
       const data = await res.json();
       const items = (data.items || []).map(s => s.name);
       setStreets(items);
-      sessionStorage.setItem('global_cached_streets', JSON.stringify(items));
+      sessionStorage.setItem(STREET_KEY, JSON.stringify(items));
       return items;
     } catch (err) {
       console.error("Fetch streets failed:", err);
@@ -145,7 +254,7 @@ const History = () => {
   const fetchCategories = async () => {
     try {
       // Fetch all categories for display/lookup
-      const res = await fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=20`);
+      const res = await fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=500`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setCategories(data.items || []);
@@ -153,10 +262,14 @@ const History = () => {
     } catch (err) { console.error(err); }
   };
 
-  const fetchTransactions = async (pageNum = 1, reset = false, perPageOverride = null) => {
+  const fetchTransactions = async (pageNum = 1, reset = false, perPageOverride = null, filterOverride = null) => {
     setLoading(true);
+    if (reset) {
+      setSelectedIds([]);
+    }
     try {
-      const { donor_id, hijri_year, trust_id, street, from_date, to_date } = filters;
+      const activeFilters = filterOverride || filters;
+      const { donor_id, hijri_year, trust_id, street, from_date, to_date } = activeFilters;
       
       const perPage = perPageOverride || 9;
       let url = `${API_ENDPOINTS.TRANSACTIONS.BASE}?page=${pageNum}&per_page=${perPage}`;
@@ -168,7 +281,7 @@ const History = () => {
       if (from_date) url += `&from_date=${from_date}`;
       if (to_date) url += `&to_date=${to_date}`;
       
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: getAuthHeaders() });
 
 
       const result = await res.json();
@@ -199,7 +312,7 @@ const History = () => {
     
     const itemsHTML = (t.items || []).map(item => {
       const cat = categories.find(c => c.id === item.category_id);
-      const catName = cat ? cat.name : 'General';
+      const catName = cat ? cat.name : (item.category_name || 'Unknown Category');
       return `
         <tr>
           <td contenteditable="true" style="padding: 10px; border: 1px solid #000; text-align: left;">${catName}</td>
@@ -274,7 +387,7 @@ const History = () => {
     setLoading(true);
     try {
       const donorId = t.donor_id;
-      const res = await fetch(API_ENDPOINTS.DONORS.DETAIL(donorId));
+      const res = await fetch(API_ENDPOINTS.DONORS.DETAIL(donorId), { headers: getAuthHeaders() });
       const donorResult = await res.json();
 
       
@@ -348,7 +461,7 @@ const History = () => {
       // Fetch fresh donor details for all transactions in parallel
       const enrichedTransactions = await Promise.all(transactions.map(async (t) => {
         try {
-          const res = await fetch(API_ENDPOINTS.DONORS.DETAIL(t.donor_id));
+          const res = await fetch(API_ENDPOINTS.DONORS.DETAIL(t.donor_id), { headers: getAuthHeaders() });
           const donorResult = await res.json();
           if (donorResult.status) {
             return { ...t, expand: { ...t.expand, donor_id: donorResult.data } };
@@ -422,11 +535,22 @@ const History = () => {
 
 
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this entire annual ledger?")) return;
-    
+  const handleDeleteClick = (id) => {
+    setConfirmState({
+      isOpen: true,
+      title: "Delete Annual Ledger",
+      message: "Are you sure you want to delete this entire annual ledger? This action cannot be undone.",
+      confirmText: "Delete",
+      onConfirm: () => performDelete(id)
+    });
+  };
+
+  const performDelete = async (id) => {
     try {
-      const res = await fetch(API_ENDPOINTS.TRANSACTIONS.DETAIL(id), { method: 'DELETE' });
+      const res = await fetch(API_ENDPOINTS.TRANSACTIONS.DETAIL(id), { 
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
       const result = await res.json();
       if (result.status) {
         setTransactions(transactions.filter(t => t.id !== id));
@@ -444,9 +568,15 @@ const History = () => {
     try {
       const res = await fetch(API_ENDPOINTS.TRANSACTIONS.DETAIL(t.id), {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
-          items: t.items,
+          items: t.items.map(item => {
+            const cat = categories.find(c => c.id === item.category_id);
+            return {
+              ...item,
+              category_name: cat ? cat.name : (item.category_name || '')
+            };
+          }),
           total_amount: t.items.reduce((sum, i) => sum + parseFloat(i.amount || 0), 0),
           hijri_year: t.hijri_year,
           payment_date: t.payment_date,
@@ -497,6 +627,17 @@ const History = () => {
           <p className={styles.subtitle}>View and manage yearly donation history</p>
         </div>
         <div className={styles.actions}>
+          {selectedIds.length > 0 && (
+            <button 
+              type="button" 
+              className={styles.deleteSelectedBtn} 
+              onClick={handleBatchDeleteClick} 
+              disabled={loading}
+              title="Delete selected entries"
+            >
+              <Trash2 size={18} /> Delete Selected ({selectedIds.length})
+            </button>
+          )}
           <button className={styles.secondaryBtn} onClick={handleReload} disabled={loading}>
             <RefreshCcw size={18} className={loading ? styles.spin : ''} /> Reload Data
           </button>
@@ -507,75 +648,184 @@ const History = () => {
       </header>
 
 
-      <form onSubmit={handleSearch} className={styles.filterBar}>
-        <div className={styles.filterScrollArea}>
-          <div className={styles.donorFilter}>
+      <div className={styles.filterContainer}>
+        <form onSubmit={handleSearch} className={styles.filterBar}>
+          <div className={styles.donorSearchWrapper}>
              <DonorSearch 
                value={filters.donor_id}
-               onChange={(val) => setFilters({...filters, donor_id: val})}
-               placeholder="Donor Name..."
+               onChange={(val) => {
+                 const updated = {...filters, donor_id: val};
+                 setFilters(updated);
+                 const cols = calculateItemsPerRow();
+                 setPage(1);
+                 fetchTransactions(1, true, cols * 3, updated);
+               }}
+               placeholder="Search Donor Name..."
              />
           </div>
 
-          <div className={styles.yearFilter}>
-            <input 
-              type="text"
-              placeholder="Hijri Year (e.g. 1446)"
-              value={filters.hijri_year}
-              onChange={(e) => setFilters({...filters, hijri_year: e.target.value})}
-            />
+          <div className={styles.filterBarActions}>
+            <button 
+              type="button" 
+              className={`${styles.filterToggleBtn} ${showFilters || getActiveFiltersCount() > 0 ? styles.activeFilterBtn : ''}`}
+              onClick={() => setShowFilters(!showFilters)}
+            >
+              <Filter size={16} />
+              <span>Filters</span>
+              {getActiveFiltersCount() > 0 && (
+                <span className={styles.filterBadge}>{getActiveFiltersCount()}</span>
+              )}
+              <ChevronDown size={14} className={`${styles.chevronIcon} ${showFilters ? styles.chevronOpen : ''}`} />
+            </button>
+
+            <button type="submit" className={styles.searchBtn} disabled={loading}>
+              <Search size={16} />
+              <span>Search</span>
+            </button>
+
+            <button 
+              type="button" 
+              className={styles.resetBtn} 
+              onClick={() => {
+                const cleared = { donor_id: '', hijri_year: '', trust_id: '', street: '', from_date: '', to_date: '' };
+                setFilters(cleared);
+                setShowFilters(false);
+                const cols = calculateItemsPerRow();
+                setPage(1);
+                fetchTransactions(1, true, cols * 3, cleared);
+              }}
+            >
+              Reset
+            </button>
           </div>
+        </form>
 
-          <div className={styles.filterSection}>
-            <TrustSelect 
-              value={filters.trust_id}
-              onChange={(val) => setFilters({...filters, trust_id: val})}
-              placeholder="Select Trust"
-            />
+        {showFilters && (
+          <div className={styles.filterDropdownPanel}>
+            <div className={styles.dropdownGrid}>
+              <div className={styles.gridField}>
+                <label>Hijri Year</label>
+                <input 
+                  type="text"
+                  placeholder="e.g. 1447"
+                  value={filters.hijri_year}
+                  onChange={(e) => setFilters({...filters, hijri_year: e.target.value})}
+                />
+              </div>
+
+              <div className={styles.gridField}>
+                <label>Organization (Trust)</label>
+                <TrustSelect 
+                  value={filters.trust_id}
+                  onChange={(val) => setFilters({...filters, trust_id: val})}
+                  placeholder="Select Trust"
+                />
+              </div>
+
+              <div className={styles.gridField}>
+                <label>Street</label>
+                <StreetSelect 
+                  value={filters.street}
+                  onChange={(val) => setFilters({...filters, street: val})}
+                  placeholder="Select Street"
+                />
+              </div>
+
+              <div className={styles.gridField}>
+                <label>From Date</label>
+                <input 
+                  type="date"
+                  value={filters.from_date}
+                  onChange={(e) => setFilters({...filters, from_date: e.target.value})}
+                />
+              </div>
+
+              <div className={styles.gridField}>
+                <label>To Date</label>
+                <input 
+                  type="date"
+                  value={filters.to_date}
+                  onChange={(e) => setFilters({...filters, to_date: e.target.value})}
+                />
+              </div>
+            </div>
+
+            <div className={styles.dropdownActions}>
+              <button 
+                type="button" 
+                className={styles.applyBtn}
+                onClick={() => {
+                  setShowFilters(false);
+                  const cols = calculateItemsPerRow();
+                  setPage(1);
+                  fetchTransactions(1, true, cols * 3);
+                }}
+              >
+                Apply Filters
+              </button>
+              <button 
+                type="button" 
+                className={styles.cancelBtn}
+                onClick={() => setShowFilters(false)}
+              >
+                Close
+              </button>
+            </div>
           </div>
+        )}
 
-          <div className={styles.filterSection}>
-            <StreetSelect 
-              value={filters.street}
-              onChange={(val) => setFilters({...filters, street: val})}
-              placeholder="Select Street"
-            />
+        {/* Applied Filters Ribbon */}
+        {getActiveFiltersCount() > 0 && (
+          <div className={styles.appliedRibbon}>
+            <span className={styles.ribbonTitle}>Applied Filters:</span>
+            <div className={styles.ribbonTags}>
+              {filters.hijri_year && (
+                <span className={styles.filterTag}>
+                  Year: {filters.hijri_year}
+                  <button type="button" onClick={() => clearFilter('hijri_year')}>×</button>
+                </span>
+              )}
+              {filters.trust_id && (
+                <span className={styles.filterTag}>
+                  Org: {trusts.find(t => t.id === filters.trust_id)?.name || 'Selected Org'}
+                  <button type="button" onClick={() => clearFilter('trust_id')}>×</button>
+                </span>
+              )}
+              {filters.street && (
+                <span className={styles.filterTag}>
+                  Street: {filters.street}
+                  <button type="button" onClick={() => clearFilter('street')}>×</button>
+                </span>
+              )}
+              {filters.from_date && (
+                <span className={styles.filterTag}>
+                  From: {filters.from_date}
+                  <button type="button" onClick={() => clearFilter('from_date')}>×</button>
+                </span>
+              )}
+              {filters.to_date && (
+                <span className={styles.filterTag}>
+                  To: {filters.to_date}
+                  <button type="button" onClick={() => clearFilter('to_date')}>×</button>
+                </span>
+              )}
+              <button 
+                type="button" 
+                className={styles.clearAllTagsBtn}
+                onClick={() => {
+                  const cleared = { ...filters, hijri_year: '', trust_id: '', street: '', from_date: '', to_date: '' };
+                  setFilters(cleared);
+                  const cols = calculateItemsPerRow();
+                  setPage(1);
+                  fetchTransactions(1, true, cols * 3, cleared);
+                }}
+              >
+                Clear All
+              </button>
+            </div>
           </div>
-
-          <div className={styles.filterSection}>
-            <input 
-              type="date"
-              value={filters.from_date}
-              onChange={(e) => setFilters({...filters, from_date: e.target.value})}
-              className={styles.dateInput}
-              title="From Date"
-            />
-          </div>
-
-          <div className={styles.filterSection}>
-            <input 
-              type="date"
-              value={filters.to_date}
-              onChange={(e) => setFilters({...filters, to_date: e.target.value})}
-              className={styles.dateInput}
-              title="To Date"
-            />
-          </div>
-        </div>
-
-        <div className={styles.filterButtons}>
-          <button type="submit" className={styles.searchBtn} disabled={loading}>
-            <Search size={18} /> Search
-          </button>
-
-          <button type="button" className={styles.resetBtn} onClick={() => {
-            setFilters({ donor_id: '', hijri_year: '', trust_id: '', street: '', from_date: '', to_date: '' });
-            setTimeout(() => handleReload(), 10);
-          }}>
-            Clear
-          </button>
-        </div>
-      </form>
+        )}
+      </div>
 
 
       {message.text && (
@@ -594,72 +844,74 @@ const History = () => {
           </div>
         )}
 
-        <div className={styles.grid}>
+        <div className={styles.tableContainer}>
           {transactions.length > 0 ? (
-            transactions.map((t) => (
-              <div key={t.id} className={styles.ledgerCard}>
-                <div className={styles.cardTop}>
-                  <div className={styles.ledgerInfo}>
-                    <div className={styles.ledgerHeader}>
+            <table className={styles.historyTable}>
+              <thead>
+                <tr>
+                  <th style={{ width: '40px', textAlign: 'center' }}>
+                    <input 
+                      type="checkbox" 
+                      className={styles.checkbox}
+                      checked={transactions.length > 0 && selectedIds.length === transactions.length} 
+                      onChange={handleSelectAll} 
+                    />
+                  </th>
+                  <th>Donor Name</th>
+                  <th>Trust Organization</th>
+                  <th>Hijri Year</th>
+                  <th>Payment Date</th>
+                  <th style={{ textAlign: 'right' }}>Total Amount</th>
+                  <th style={{ textAlign: 'center' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {transactions.map((t) => (
+                  <tr 
+                    key={t.id} 
+                    className={styles.tableRow}
+                    onClick={() => setSelectedTransaction(t)}
+                  >
+                    <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                      <input 
+                        type="checkbox" 
+                        className={styles.checkbox}
+                        checked={selectedIds.includes(t.id)} 
+                        onChange={(e) => handleSelectOne(t.id, e.target.checked)} 
+                      />
+                    </td>
+                    <td>
+                      <span className={styles.donorName}>{t.donor_name}</span>
+                    </td>
+                    <td>
+                      <span className={styles.trustName}>{t.trust_name || 'No Trust'}</span>
+                    </td>
+                    <td>
                       <span className={styles.yearTag}>{t.hijri_year} AH</span>
-                      {t.trust_name && <span className={styles.trustBadge}>{t.trust_name}</span>}
-                    </div>
-                    <h3>{t.donor_name}</h3>
-
-                  </div>
-                  <div className={styles.cardMenu}>
-                    <button onClick={() => handlePrintCard(t)} title="Print Bill">
-                      <Printer size={18} />
-                    </button>
-                    <button onClick={() => setEditModal({ show: true, transaction: JSON.parse(JSON.stringify(t)) })} title="Edit">
-                      <Edit3 size={18} />
-                    </button>
-                    <button onClick={() => handleDelete(t.id)} className={styles.deleteBtn} title="Delete">
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className={styles.cardContent}>
-                  <div className={styles.tableWrapper}>
-                    <table className={styles.billTable}>
-                      <thead>
-                        <tr>
-                          <th>Category</th>
-                          <th>Date</th>
-                          <th style={{textAlign: 'right'}}>Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(t.items || []).map((item, idx) => {
-                          // Enhanced lookup to handle potential ID mismatches
-                          const cat = categories.find(c => c.id === item.category_id);
-                          const displayName = cat ? cat.name : (categories.length > 0 ? 'General' : 'Loading...');
-                          
-                          return (
-                            <tr key={idx}>
-                              <td>{displayName}</td>
-                              <td>{item.date}</td>
-                              <td style={{textAlign: 'right'}}>₹{item.amount.toFixed(2)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-
-                <div className={styles.cardFooter}>
-                  <div className={styles.totalBlock}>
-                    <label>Total Collected</label>
-                    <div className={styles.grandTotal}>₹{t.total_amount.toFixed(2)}</div>
-                  </div>
-
-                  {t.notes && <p className={styles.ledgerNotes}><FileText size={14} /> {t.notes}</p>}
-                </div>
-              </div>
-            ))
+                    </td>
+                    <td>
+                      <span className={styles.dateVal}>{t.payment_date}</span>
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
+                      ₹{t.total_amount.toFixed(2)}
+                    </td>
+                    <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                      <div className={styles.rowActions}>
+                        <button className={styles.rowActionBtn} onClick={() => handlePrintCard(t)} title="Print Receipt">
+                          <Printer size={16} />
+                        </button>
+                        <button className={styles.rowActionBtn} onClick={() => setEditModal({ show: true, transaction: JSON.parse(JSON.stringify(t)) })} title="Edit">
+                          <Edit3 size={16} />
+                        </button>
+                        <button className={`${styles.rowActionBtn} ${styles.deleteBtn}`} onClick={() => handleDeleteClick(t.id)} title="Delete">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : !loading && (
             <div className={styles.emptyState}>No transactions found for these filters.</div>
           )}
@@ -757,10 +1009,140 @@ const History = () => {
                   </button>
                 </div>
             </form>
-
           </div>
         </div>
       )}
+
+      {/* Transaction Details Viewer Modal */}
+      {selectedTransaction && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal} style={{ maxWidth: '550px' }}>
+            <div className={styles.modalHeader}>
+              <div className={styles.modalTitleGroup}>
+                <FileText size={22} className={styles.modalIcon} />
+                <h2>Ledger Details</h2>
+              </div>
+              <button onClick={() => setSelectedTransaction(null)} className={styles.closeBtn} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className={styles.viewerContent}>
+              <div className={styles.viewerHeaderBlock}>
+                <div className={styles.viewerDonorInfo}>
+                  <label>Donor</label>
+                  <h3>{selectedTransaction.donor_name}</h3>
+                </div>
+                <div className={styles.viewerTotalBlock}>
+                  <label>Total Collected</label>
+                  <div className={styles.viewerTotalAmount}>₹{selectedTransaction.total_amount.toFixed(2)}</div>
+                </div>
+              </div>
+
+              <div className={styles.viewerMetaGrid}>
+                <div className={styles.viewerMetaItem}>
+                  <label>Trust Organization</label>
+                  <span>{selectedTransaction.trust_name || 'No Trust'}</span>
+                </div>
+                <div className={styles.viewerMetaItem}>
+                  <label>Hijri Year</label>
+                  <span>{selectedTransaction.hijri_year} AH</span>
+                </div>
+                <div className={styles.viewerMetaItem}>
+                  <label>Payment Date</label>
+                  <span>{selectedTransaction.payment_date}</span>
+                </div>
+              </div>
+
+              {selectedTransaction.notes && (
+                <div className={styles.viewerNotes}>
+                  <label>Notes</label>
+                  <p>{selectedTransaction.notes}</p>
+                </div>
+              )}
+
+              <div className={styles.viewerItemsSection}>
+                <label>Ledger Items</label>
+                <div className={styles.viewerTableWrapper}>
+                  <table className={styles.viewerTable}>
+                    <thead>
+                      <tr>
+                        <th>Category</th>
+                        <th>Date</th>
+                        <th style={{ textAlign: 'right' }}>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(selectedTransaction.items || []).map((item, idx) => {
+                        const cat = categories.find(c => c.id === item.category_id);
+                        const displayName = cat ? cat.name : (item.category_name || (categories.length > 0 ? 'Unknown Category' : 'Loading...'));
+                        return (
+                          <tr key={idx}>
+                            <td>{displayName}</td>
+                            <td>{item.date}</td>
+                            <td style={{ textAlign: 'right', fontWeight: '600' }}>₹{item.amount.toFixed(2)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.modalFooter} style={{ padding: '1.25rem 2rem', borderTop: '1px solid var(--border)' }}>
+              <button 
+                type="button" 
+                className={styles.viewerActionBtn} 
+                onClick={() => {
+                  handlePrintCard(selectedTransaction);
+                }}
+              >
+                <Printer size={16} /> Print Receipt
+              </button>
+              <button 
+                type="button" 
+                className={styles.viewerActionBtn} 
+                onClick={() => {
+                  setEditModal({ show: true, transaction: JSON.parse(JSON.stringify(selectedTransaction)) });
+                  setSelectedTransaction(null);
+                }}
+              >
+                <Edit3 size={16} /> Edit
+              </button>
+              <button 
+                type="button" 
+                className={`${styles.viewerActionBtn} ${styles.viewerDeleteBtn}`} 
+                onClick={() => {
+                  handleDeleteClick(selectedTransaction.id);
+                  setSelectedTransaction(null);
+                }}
+              >
+                <Trash2 size={16} /> Delete
+              </button>
+              <button 
+                type="button" 
+                className={styles.cancelBtn} 
+                onClick={() => setSelectedTransaction(null)}
+                style={{ marginLeft: 'auto' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirm Modal */}
+      <ConfirmModal 
+        isOpen={confirmState.isOpen}
+        onClose={() => setConfirmState(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmState.onConfirm}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmText={confirmState.confirmText}
+        type="danger"
+      />
     </div>
   );
 };

@@ -8,7 +8,7 @@ import {
   LogOut
 } from 'lucide-react';
 
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import ConfirmModal from '../../components/ConfirmModal';
 import styles from './Settings.module.css';
@@ -21,8 +21,21 @@ import DonorsTab from './tabs/Donors/DonorsTab';
 
 const Settings = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState('categories'); // 'categories', 'trusts', 'streets', 'donors'
+  const [activeTab, setActiveTab] = useState(() => {
+    if (location.state && location.state.tab) {
+      return location.state.tab;
+    }
+    return 'categories';
+  });
+
+  useEffect(() => {
+    if (location.state && location.state.tab) {
+      setActiveTab(location.state.tab);
+    }
+  }, [location.state]);
+
   const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Shared Confirm Modal State

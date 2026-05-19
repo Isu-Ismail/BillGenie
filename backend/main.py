@@ -32,6 +32,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def log_requests(request, call_next):
+    x_user_id = request.headers.get("x-user-id")
+    print(f"[HTTP] {request.method} {request.url.path} - x-user-id header: {repr(x_user_id)}")
+    response = await call_next(request)
+    return response
+
 # 1. Register API Routes first
 app.include_router(new_entry.router, prefix="/api/new-entry", tags=["Entries"])
 app.include_router(categories.router, prefix="/api/categories", tags=["Categories"])

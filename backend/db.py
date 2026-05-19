@@ -34,14 +34,26 @@ def authenticate_admin():
 thread = threading.Thread(target=authenticate_admin, daemon=True)
 thread.start()
 
-def get_cached_data(data_type, filters_dict=None):
+def get_cached_data(data_type, filters_dict=None, user_id=None):
     """
-    Fetches cached data based on data_type and filters.
-    If filters_dict is None, returns the LATEST created metadata for that type.
+    Fetches cached data based on data_type, filters, and user_id.
+    If filters_dict is None, returns the LATEST created metadata for that type and user.
     """
     try:
+        if not user_id:
+            try:
+                users = pb.collection('users').get_list(1, 1)
+                if users.items:
+                    user_id = users.items[0].id
+            except Exception as ue:
+                print(f"Error fetching fallback user for cache get: {ue}")
+
+        filter_parts = [f'data_type = "{data_type}"']
+        if user_id:
+            filter_parts.append(f'created_by = "{user_id}"')
+            
         query_params = {
-            "filter": f'data_type = "{data_type}"',
+            "filter": " && ".join(filter_parts),
             "sort": "-created",
         }
         
@@ -66,19 +78,31 @@ def get_cached_data(data_type, filters_dict=None):
         print(f"Cache check failed: {e}")
         return None, None
 
-def update_cached_data(data_type, data, filters_dict):
+def update_cached_data(data_type, data, filters_dict, user_id=None):
     """
-    Updates or creates a cache entry for a specific data_type and filter set.
+    Updates or creates a cache entry for a specific data_type, user_id, and filter set.
     """
     try:
+        if not user_id:
+            try:
+                users = pb.collection('users').get_list(1, 1)
+                if users.items:
+                    user_id = users.items[0].id
+            except Exception as ue:
+                print(f"Error fetching fallback user for cache update: {ue}")
+
         import datetime
         # Prepare value with timestamp
         data["last_generated"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         data["is_cached"] = True
         
+        filter_parts = [f'data_type = "{data_type}"']
+        if user_id:
+            filter_parts.append(f'created_by = "{user_id}"')
+
         # Check for existing record with EXACT same filters to update it
         existing = pb.collection('metadata').get_list(1, 20, {
-            "filter": f'data_type = "{data_type}"'
+            "filter": " && ".join(filter_parts)
         })
         
         target_id = None
@@ -92,6 +116,8 @@ def update_cached_data(data_type, data, filters_dict):
             "data_type": data_type,
             "field": filters_dict
         }
+        if user_id:
+            payload["created_by"] = user_id
         
         if target_id:
             pb.collection('metadata').update(target_id, payload)

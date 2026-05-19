@@ -15,17 +15,31 @@ import {
   GripVertical
 } from 'lucide-react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocation } from 'react-router-dom';
 import { useDebounce } from '../../../../hooks/useDebounce';
 import { subscribeToCollection } from '../../../../webhook';
 import styles from './TrustsTab.module.css';
-import { API_ENDPOINTS } from '../../../../api';
+import { API_ENDPOINTS, getAuthHeaders } from '../../../../api';
 
 const TrustsTab = ({ onConfirmDelete }) => {
   const queryClient = useQueryClient();
+  const location = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearch = useDebounce(searchTerm, 2000);
   const [categories, setCategories] = useState([]);
   const [editModal, setEditModal] = useState({ isOpen: false, mode: 'edit', data: null });
+
+  useEffect(() => {
+    if (location.state && location.state.openAddModal) {
+      setEditModal({ 
+        isOpen: true, 
+        mode: 'create', 
+        data: { name: '', address: '', mobile: '', email: '', category_ids: [] } 
+      });
+      // Clear location state so reloading doesn't pop it up again
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
 
   // Infinite query for paginated trusts
   const {
@@ -40,7 +54,7 @@ const TrustsTab = ({ onConfirmDelete }) => {
       let url = `${API_ENDPOINTS.TRUSTS.BASE}?page=${pageParam}&per_page=20`;
       if (debouncedSearch) url += `&search=${encodeURIComponent(debouncedSearch)}`;
       
-      const response = await fetch(url);
+      const response = await fetch(url, { headers: getAuthHeaders() });
       if (!response.ok) throw new Error('Network response was not ok');
       return response.json();
     },
@@ -84,7 +98,7 @@ const TrustsTab = ({ onConfirmDelete }) => {
 
   const fetchCategories = async () => {
     try {
-      const response = await fetch(API_ENDPOINTS.CATEGORIES.BASE);
+      const response = await fetch(API_ENDPOINTS.CATEGORIES.BASE, { headers: getAuthHeaders() });
       if (response.ok) {
         const data = await response.json();
         setCategories(data.items || []);
@@ -124,11 +138,27 @@ const TrustsTab = ({ onConfirmDelete }) => {
     try {
       const response = await fetch(url, {
         method: isEdit ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(submissionData)
       });
       if (response.ok) {
         const savedTrust = await response.json();
+        if (savedTrust.status === false) {
+          let errorMsg = savedTrust.msg || "An error occurred while saving.";
+          if (errorMsg.includes('validation_not_unique')) {
+            errorMsg = "This organization name already exists.";
+          } else if (errorMsg.includes('ClientResponseError 400:')) {
+            errorMsg = errorMsg.replace(/ClientResponseError 400:\s*Failed to (create|update) record\.\s*/gi, '').trim();
+            // Capitalize first letter
+            if (errorMsg) {
+              errorMsg = errorMsg.charAt(0).toUpperCase() + errorMsg.slice(1);
+            } else {
+              errorMsg = "A required field cannot be blank.";
+            }
+          }
+          setEditModal(prev => ({ ...prev, error: errorMsg }));
+          return;
+        }
         updateGlobalTrustCache(savedTrust, isEdit ? savedTrust.id : null);
         setEditModal({ isOpen: false, mode: 'edit', data: null });
         queryClient.invalidateQueries({ queryKey: ['trusts'] });
@@ -136,7 +166,7 @@ const TrustsTab = ({ onConfirmDelete }) => {
         // IMPORTANT: Update Session Cache for Entry Page
         try {
           // Fetch the fresh grouped categories for this trust
-          const catRes = await fetch(`${API_ENDPOINTS.CATEGORIES.BY_TRUST(savedTrust.id)}`);
+          const catRes = await fetch(`${API_ENDPOINTS.CATEGORIES.BY_TRUST(savedTrust.id)}`, { headers: getAuthHeaders() });
           if (catRes.ok) {
             const freshCatData = await catRes.json();
             
@@ -157,6 +187,13 @@ const TrustsTab = ({ onConfirmDelete }) => {
         } catch (cacheErr) {
           console.error("Cache update failed:", cacheErr);
         }
+      } else {
+        const errData = await response.json();
+        let errorMsg = errData.detail || "An error occurred while saving.";
+        if (errorMsg.includes('validation_not_unique')) {
+          errorMsg = "This organization name already exists.";
+        }
+        setEditModal(prev => ({ ...prev, error: errorMsg }));
       }
     } catch (err) {
       console.error("Error saving trust:", err);
@@ -170,7 +207,10 @@ const TrustsTab = ({ onConfirmDelete }) => {
       confirmText: "Delete",
       onConfirm: async () => {
         try {
-          const res = await fetch(API_ENDPOINTS.TRUSTS.DETAIL(id), { method: 'DELETE' });
+          const res = await fetch(API_ENDPOINTS.TRUSTS.DETAIL(id), { 
+            method: 'DELETE',
+            headers: getAuthHeaders()
+          });
           if (res.ok) {
             updateGlobalTrustCache(null, id);
             queryClient.invalidateQueries({ queryKey: ['trusts'] });
@@ -324,6 +364,11 @@ const TrustsTab = ({ onConfirmDelete }) => {
               </button>
             </div>
             <div className={styles.modalBody}>
+              {editModal.error && (
+                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1rem', border: '1px solid rgba(239, 68, 68, 0.2)', fontSize: '0.9rem' }}>
+                  {editModal.error}
+                </div>
+              )}
               <div className={styles.modalForm}>
                 <div className={styles.inputGroup}>
                   <label>Organization Name</label>

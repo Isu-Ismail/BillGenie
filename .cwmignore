@@ -1,0 +1,11 @@
+.env
+.DS_Store
+.idea/
+.vscode/
+*.log
+build/
+__pycache__/
+venv/
+excel-populator/
+.cwm/
+.gitignore

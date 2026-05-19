@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Header
+from pydantic import BaseModel, model_validator
 from typing import List, Optional
 from db import pb
 
@@ -7,6 +7,7 @@ router = APIRouter()
 
 class TransactionItem(BaseModel):
     category_id: str
+    category_name: Optional[str] = ""
     amount: float
     date: str
 
@@ -18,6 +19,14 @@ class TransactionUpdate(BaseModel):
     notes: Optional[str] = ""
     trust_id: Optional[str] = None
 
+    @model_validator(mode='before')
+    def strip_strings(cls, values):
+        if isinstance(values, dict):
+            for k, v in values.items():
+                if isinstance(v, str):
+                    values[k] = v.strip()
+        return values
+
 
 @router.get("/")
 async def get_transactions(
@@ -28,10 +37,13 @@ async def get_transactions(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     page: int = 1,
-    per_page: int = 10
+    per_page: int = 10,
+    x_user_id: Optional[str] = Header(None)
 ):
     try:
         filters = []
+        if x_user_id:
+            filters.append(f'created_by = "{x_user_id}"')
         if donor_id and donor_id.strip():
             filters.append(f'donor_id = "{donor_id}"')
         if hijri_year and hijri_year.strip():
@@ -100,7 +112,7 @@ async def get_transactions(
 
 
 @router.post("/create/")
-async def create_transaction(transaction: TransactionUpdate):
+async def create_transaction(transaction: TransactionUpdate, x_user_id: Optional[str] = Header(None)):
     try:
         # Calculate new total using object attributes
         total = sum(item.amount for item in transaction.items)
@@ -116,6 +128,8 @@ async def create_transaction(transaction: TransactionUpdate):
             "payment_date": transaction.payment_date,
             "trust_id": transaction.trust_id
         }
+        if x_user_id:
+            data["created_by"] = x_user_id
 
         record = pb.collection('transactions').create(data)
         return {
@@ -129,7 +143,7 @@ async def create_transaction(transaction: TransactionUpdate):
 
 
 @router.post("/batch-create/")
-async def batch_create_transactions(transactions: List[TransactionUpdate]):
+async def batch_create_transactions(transactions: List[TransactionUpdate], x_user_id: Optional[str] = Header(None)):
     try:
         results = []
         for t in transactions:
@@ -143,6 +157,8 @@ async def batch_create_transactions(transactions: List[TransactionUpdate]):
                 "payment_date": t.payment_date,
                 "trust_id": t.trust_id
             }
+            if x_user_id:
+                data["created_by"] = x_user_id
             results.append(pb.collection('transactions').create(data).id)
         
         return {
@@ -156,7 +172,7 @@ async def batch_create_transactions(transactions: List[TransactionUpdate]):
 
 
 @router.put("/{transaction_id}")
-async def update_transaction(transaction_id: str, request: TransactionUpdate):
+async def update_transaction(transaction_id: str, request: TransactionUpdate, x_user_id: Optional[str] = Header(None)):
     try:
         # Calculate new total using object attributes
         total = sum(item.amount for item in request.items)
@@ -171,6 +187,8 @@ async def update_transaction(transaction_id: str, request: TransactionUpdate):
             "hijri_year": request.hijri_year,
             "payment_date": request.payment_date
         }
+        if x_user_id:
+            data["created_by"] = x_user_id
         
         # Handle trust_id specifically
         if request.trust_id:

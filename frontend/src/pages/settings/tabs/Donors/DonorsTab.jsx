@@ -12,17 +12,31 @@ import {
   User
 } from 'lucide-react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocation } from 'react-router-dom';
 import { useDebounce } from '../../../../hooks/useDebounce';
 import { subscribeToCollection } from '../../../../webhook';
 import styles from './DonorsTab.module.css';
-import { API_ENDPOINTS } from '../../../../api';
+import { API_ENDPOINTS, getAuthHeaders } from '../../../../api';
 import StreetSelect from '../../../entry/StreetSelect';
 
 const DonorsTab = ({ onConfirmDelete }) => {
   const queryClient = useQueryClient();
+  const location = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearch = useDebounce(searchTerm, 500); // Faster search response
   const [editModal, setEditModal] = useState({ isOpen: false, mode: 'create', data: null });
+
+  useEffect(() => {
+    if (location.state && location.state.openAddModal) {
+      setEditModal({ 
+        isOpen: true, 
+        mode: 'create', 
+        data: { name: '', gender: 'M', mobile: '', door_no: '', street: '' } 
+      });
+      // Clear location state so reloading doesn't pop it up again
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
 
   // Infinite query for paginated donors
   const {
@@ -37,7 +51,7 @@ const DonorsTab = ({ onConfirmDelete }) => {
       let url = `${API_ENDPOINTS.DONORS.BASE}?page=${pageParam}&per_page=20`;
       if (debouncedSearch) url += `&search=${encodeURIComponent(debouncedSearch)}`;
       
-      const response = await fetch(url);
+      const response = await fetch(url, { headers: getAuthHeaders() });
       if (!response.ok) throw new Error('Network response was not ok');
       return response.json();
     },
@@ -72,13 +86,24 @@ const DonorsTab = ({ onConfirmDelete }) => {
     try {
       const response = await fetch(url, {
         method: isEdit ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(editModal.data)
       });
       if (response.ok) {
         updateGlobalDonorCache();
         setEditModal({ isOpen: false, mode: 'create', data: null });
         queryClient.invalidateQueries({ queryKey: ['donors'] });
+      } else {
+        const errData = await response.json();
+        let errorMsg = errData.detail || "An error occurred while saving.";
+        if (errorMsg.includes('validation_not_unique') || errorMsg.includes('Failed to create record') || errorMsg.includes('UNIQUE constraint failed')) {
+          if (errorMsg.includes("'mobile'") && errorMsg.includes('validation_not_unique')) {
+            errorMsg = "This mobile number is already registered to another donor.";
+          } else {
+            errorMsg = "A donor with this exact name and street (or mobile number) already exists.";
+          }
+        }
+        setEditModal(prev => ({ ...prev, error: errorMsg }));
       }
     } catch (err) {
       console.error("Error saving donor:", err);
@@ -92,7 +117,10 @@ const DonorsTab = ({ onConfirmDelete }) => {
       confirmText: "Delete Everything",
       onConfirm: async () => {
         try {
-          const res = await fetch(API_ENDPOINTS.DONORS.DETAIL(id), { method: 'DELETE' });
+          const res = await fetch(API_ENDPOINTS.DONORS.DETAIL(id), { 
+            method: 'DELETE',
+            headers: getAuthHeaders()
+          });
           if (res.ok) {
             updateGlobalDonorCache();
             queryClient.invalidateQueries({ queryKey: ['donors'] });
@@ -185,6 +213,11 @@ const DonorsTab = ({ onConfirmDelete }) => {
               </button>
             </div>
             <div className={styles.modalBody}>
+              {editModal.error && (
+                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1rem', border: '1px solid rgba(239, 68, 68, 0.2)', fontSize: '0.9rem' }}>
+                  {editModal.error}
+                </div>
+              )}
                <div className={styles.modalForm}>
                   <div className={styles.inputGroup}>
                     <label>Full Name</label>

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from typing import Optional, List
 from db import pb, get_cached_data, update_cached_data
 from collections import defaultdict
@@ -13,7 +13,8 @@ async def get_report_data(
     streets: Optional[str] = None,
     categories: Optional[str] = None,
     from_date: Optional[str] = None,
-    to_date: Optional[str] = None
+    to_date: Optional[str] = None,
+    x_user_id: Optional[str] = Header(None)
 ):
     try:
         # Build filter dict
@@ -30,7 +31,7 @@ async def get_report_data(
         # If no trust_id/hijri_year given, try to get the LATEST report
         is_latest_search = not trust_id or not hijri_year
         
-        cached_value, cached_fields = get_cached_data("REPORT", None if is_latest_search else filters_dict)
+        cached_value, cached_fields = get_cached_data("REPORT", None if is_latest_search else filters_dict, x_user_id)
         
         if cached_value:
             return {
@@ -60,16 +61,17 @@ async def generate_report(
     streets: Optional[str] = None,
     categories: Optional[str] = None, # Comma separated IDs
     from_date: Optional[str] = None,
-    to_date: Optional[str] = None
+    to_date: Optional[str] = None,
+    x_user_id: Optional[str] = Header(None)
 ):
     try:
-        print(f"📊 Generating report: trust={trust_id}, year={hijri_year}, gender={gender}, streets={streets}, cats={categories}")
+        print(f"📊 Generating report: trust={trust_id}, year={hijri_year}, gender={gender}, streets={streets}, cats={categories}, user={x_user_id}")
         
         street_list = streets.split(",") if streets else []
         cat_id_list = categories.split(",") if categories else []
         
         # Calculate fresh
-        report_data = await calculate_fresh_report(trust_id, hijri_year, gender, street_list, cat_id_list, from_date, to_date)
+        report_data = await calculate_fresh_report(trust_id, hijri_year, gender, street_list, cat_id_list, from_date, to_date, x_user_id)
         
         # Save to metadata cache
         filters_dict = {
@@ -81,7 +83,7 @@ async def generate_report(
             "from_date": from_date,
             "to_date": to_date
         }
-        cached_data = update_cached_data("REPORT", report_data, filters_dict)
+        cached_data = update_cached_data("REPORT", report_data, filters_dict, x_user_id)
         
         return {
             "status": True,
@@ -100,13 +102,19 @@ async def calculate_fresh_report(
     street_list: List[str] = [],
     cat_id_list: List[str] = [],
     from_date: Optional[str] = None,
-    to_date: Optional[str] = None
+    to_date: Optional[str] = None,
+    x_user_id: Optional[str] = None
 ):
     # 1. Fetch categories
-    all_categories = pb.collection('categories').get_full_list()
+    query_params = {}
+    if x_user_id:
+        query_params["filter"] = f'created_by = "{x_user_id}"'
+    all_categories = pb.collection('categories').get_full_list(query_params=query_params)
     
     # 2. Build filters for transactions
     filters = []
+    if x_user_id:
+        filters.append(f'created_by = "{x_user_id}"')
     if trust_id:
         filters.append(f'trust_id = "{trust_id}"')
     if hijri_year:
@@ -129,7 +137,10 @@ async def calculate_fresh_report(
             joined_streets = " || ".join([f'donor_id.street = "{s}"' for s in actual_streets])
             street_filters.append(f"({joined_streets})")
         if has_other:
-            all_formal_streets_res = pb.collection('streets').get_full_list()
+            query_params = {}
+            if x_user_id:
+                query_params["filter"] = f'created_by = "{x_user_id}"'
+            all_formal_streets_res = pb.collection('streets').get_full_list(query_params=query_params)
             formal_names = [s.name for s in all_formal_streets_res]
             if formal_names:
                 joined_formal = " && ".join([f'donor_id.street != "{s}"' for s in formal_names])

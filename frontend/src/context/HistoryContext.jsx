@@ -10,8 +10,12 @@ export const HistoryProvider = ({ children }) => {
     const [hasLoadedOnce, setHasLoadedOnce] = useState(() => {
         return sessionStorage.getItem('history_has_loaded_once') === 'true';
     });
+    const userJson = localStorage.getItem('user');
+    const userId = userJson ? JSON.parse(userJson)?.id : 'default';
+    const CAT_KEY = `global_cached_categories_${userId}`;
+
     const [categories, setCategories] = useState(() => {
-        const saved = sessionStorage.getItem('history_cached_categories');
+        const saved = sessionStorage.getItem(CAT_KEY);
         return saved ? JSON.parse(saved) : [];
     });
     const [pagination, setPagination] = useState(null);
@@ -27,7 +31,7 @@ export const HistoryProvider = ({ children }) => {
 
     const setCategoriesPersistent = (cats) => {
         setCategories(cats);
-        sessionStorage.setItem('history_cached_categories', JSON.stringify(cats));
+        sessionStorage.setItem(CAT_KEY, JSON.stringify(cats));
     };
 
     const setHasLoadedOncePersistent = (val) => {

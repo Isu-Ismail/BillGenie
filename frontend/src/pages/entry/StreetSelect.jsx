@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, MapPin, Plus, Check, ChevronDown, Loader2, X } from 'lucide-react';
 import styles from './StreetSelect.module.css';
-import { API_ENDPOINTS } from '../../api';
+import { API_ENDPOINTS, getAuthHeaders } from '../../api';
 
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -9,8 +9,12 @@ const StreetSelect = ({ value, onChange, placeholder = "Select street..." }) => 
   const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const userJson = localStorage.getItem('user');
+  const userId = userJson ? JSON.parse(userJson)?.id : 'default';
+  const CACHE_KEY = `global_cached_streets_${userId}`;
+
   const [streets, setStreets] = useState(() => {
-    const saved = sessionStorage.getItem('global_cached_streets');
+    const saved = sessionStorage.getItem(CACHE_KEY);
     const parsed = saved ? JSON.parse(saved) : [];
     return parsed.map(s => typeof s === 'object' ? s.name : s);
   });
@@ -29,12 +33,12 @@ const StreetSelect = ({ value, onChange, placeholder = "Select street..." }) => 
   const fetchInitialStreets = async () => {
     setLoading(true);
     try {
-      const res = await fetch(API_ENDPOINTS.STREETS.BASE + "?per_page=20");
+      const res = await fetch(API_ENDPOINTS.STREETS.BASE + "?per_page=20", { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         const streetNames = (data.items || []).map(s => s.name);
         setStreets(streetNames);
-        sessionStorage.setItem('global_cached_streets', JSON.stringify(streetNames));
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify(streetNames));
       }
     } catch (err) {
       console.error("Error fetching streets:", err);
@@ -61,7 +65,7 @@ const StreetSelect = ({ value, onChange, placeholder = "Select street..." }) => 
       if (localMatches.length < 5) {
         setLoading(true);
         try {
-          const res = await fetch(`${API_ENDPOINTS.STREETS.BASE}?search=${encodeURIComponent(query)}&per_page=10`);
+          const res = await fetch(`${API_ENDPOINTS.STREETS.BASE}?search=${encodeURIComponent(query)}&per_page=10`, { headers: getAuthHeaders() });
           if (res.ok) {
             const data = await res.json();
             const remoteNames = (data.items || []).map(s => s.name);
@@ -72,7 +76,7 @@ const StreetSelect = ({ value, onChange, placeholder = "Select street..." }) => 
               remoteNames.forEach(name => {
                 if (!combined.includes(name)) combined.push(name);
               });
-              sessionStorage.setItem('global_cached_streets', JSON.stringify(combined));
+              sessionStorage.setItem(CACHE_KEY, JSON.stringify(combined));
               return combined;
             });
             setSearchResults(prev => {
@@ -114,7 +118,7 @@ const StreetSelect = ({ value, onChange, placeholder = "Select street..." }) => 
     try {
       const response = await fetch(API_ENDPOINTS.STREETS.CREATE, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ name: newName })
       });
       
@@ -122,7 +126,7 @@ const StreetSelect = ({ value, onChange, placeholder = "Select street..." }) => 
         // Update local state and global cache
         setStreets(prev => {
           const updated = [...prev, newName];
-          sessionStorage.setItem('global_cached_streets', JSON.stringify(updated));
+          sessionStorage.setItem(CACHE_KEY, JSON.stringify(updated));
           return updated;
         });
 
@@ -132,7 +136,11 @@ const StreetSelect = ({ value, onChange, placeholder = "Select street..." }) => 
         handleSelect(newName);
       } else {
         const err = await response.json();
-        alert(err.detail || "Error creating street");
+        let errorMsg = err.detail || "Error creating street";
+        if (errorMsg.includes('validation_not_unique')) {
+           errorMsg = "This street name already exists in the database.";
+        }
+        alert(errorMsg);
       }
     } catch (err) {
       console.error("Create street error:", err);

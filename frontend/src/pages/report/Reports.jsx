@@ -19,9 +19,15 @@ import {
 import ExcelJS from 'exceljs';
 import styles from './Reports.module.css';
 import TrustSelect from '../entry/TrustSelect';
-import { API_ENDPOINTS } from '../../api';
+import { API_ENDPOINTS, getAuthHeaders } from '../../api';
 
 const Reports = () => {
+  const userJson = localStorage.getItem('user');
+  const userId = userJson ? JSON.parse(userJson)?.id : 'default';
+  const TRUST_KEY = `global_cached_trusts_${userId}`;
+  const STREET_KEY = `global_cached_streets_${userId}`;
+  const CAT_KEY = `global_cached_categories_${userId}`;
+
   const [reportData, setReportData] = useState(() => {
     const saved = sessionStorage.getItem('reports_cached_data');
     return saved ? JSON.parse(saved) : [];
@@ -31,7 +37,7 @@ const Reports = () => {
     return saved ? JSON.parse(saved) : [];
   });
   const [trusts, setTrusts] = useState(() => {
-    const saved = sessionStorage.getItem('global_cached_trusts');
+    const saved = sessionStorage.getItem(TRUST_KEY);
     return saved ? JSON.parse(saved) : [];
   });
   const [summary, setSummary] = useState(() => {
@@ -57,9 +63,44 @@ const Reports = () => {
   const [fromDate, setFromDate] = useState(sessionStorage.getItem('reports_selected_from_date') || '');
   const [toDate, setToDate] = useState(sessionStorage.getItem('reports_selected_to_date') || '');
   
+  const [showFilters, setShowFilters] = useState(false);
+
+  const getActiveFiltersCount = () => {
+    let count = 0;
+    if (selectedYear) count++;
+    if (selectedGender && selectedGender !== 'All') count++;
+    if (selectedStreets.length > 0) count++;
+    if (selectedCategories.length > 0) count++;
+    if (fromDate) count++;
+    if (toDate) count++;
+    return count;
+  };
+
+  const clearFilter = (key) => {
+    if (key === 'year') {
+      setSelectedYear('');
+      sessionStorage.setItem('reports_selected_year', '');
+    } else if (key === 'gender') {
+      setSelectedGender('All');
+      sessionStorage.setItem('reports_selected_gender', 'All');
+    } else if (key === 'streets') {
+      setSelectedStreets([]);
+      sessionStorage.setItem('reports_selected_streets', JSON.stringify([]));
+    } else if (key === 'categories') {
+      setSelectedCategories([]);
+      sessionStorage.setItem('reports_selected_categories', JSON.stringify([]));
+    } else if (key === 'fromDate') {
+      setFromDate('');
+      sessionStorage.setItem('reports_selected_from_date', '');
+    } else if (key === 'toDate') {
+      setToDate('');
+      sessionStorage.setItem('reports_selected_to_date', '');
+    }
+  };
+  
   // Dynamic states
   const [allStreets, setAllStreets] = useState(() => {
-    const saved = sessionStorage.getItem('global_cached_streets');
+    const saved = sessionStorage.getItem(STREET_KEY);
     const parsed = saved ? JSON.parse(saved) : [];
     // Reports needs objects {id, name}, so map strings if needed
     return parsed.map(s => typeof s === 'string' ? { id: s, name: s } : s);
@@ -72,7 +113,7 @@ const Reports = () => {
 
   
   const [allCategoriesList, setAllCategoriesList] = useState(() => {
-    const saved = sessionStorage.getItem('reports_cached_all_categories');
+    const saved = sessionStorage.getItem(CAT_KEY);
     return saved ? JSON.parse(saved) : [];
   });
   const [categorySearch, setCategorySearch] = useState('');
@@ -196,7 +237,7 @@ const Reports = () => {
         url += `?trust_id=${trust}&hijri_year=${year}${genderParam}${streetParam}${catParam}${dateParam}`;
       }
 
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: getAuthHeaders() });
       if (res.ok) {
         const result = await res.json();
         if (result.from_cache) {
@@ -264,7 +305,7 @@ const Reports = () => {
     try {
       let url = `${API_ENDPOINTS.STREETS.BASE}?page=${streetPage}&per_page=20`;
       if (streetSearch) url += `&search=${encodeURIComponent(streetSearch)}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         const newStreets = data.items || [];
@@ -273,15 +314,15 @@ const Reports = () => {
           const existingIds = new Set(base.map(s => s.id));
           const updated = [...base, ...newStreets.filter(s => !existingIds.has(s.id))];
           if (streetPage === 1 && !streetSearch) {
-             sessionStorage.setItem('global_cached_streets', JSON.stringify(updated.map(s => s.name).slice(0, 20)));
+             sessionStorage.setItem(STREET_KEY, JSON.stringify(updated.map(s => s.name).slice(0, 500)));
           } else if (streetSearch && newStreets.length > 0) {
              // Merge search results into global cache as strings
-             const globalSaved = JSON.parse(sessionStorage.getItem('global_cached_streets') || '[]');
+             const globalSaved = JSON.parse(sessionStorage.getItem(STREET_KEY) || '[]');
              const combined = [...globalSaved];
              newStreets.forEach(s => {
                if (!combined.includes(s.name)) combined.push(s.name);
              });
-             sessionStorage.setItem('global_cached_streets', JSON.stringify(combined));
+             sessionStorage.setItem(STREET_KEY, JSON.stringify(combined));
           }
           return updated;
         });
@@ -297,9 +338,9 @@ const Reports = () => {
     
     setLoadingCategories(true);
     try {
-      let url = `${API_ENDPOINTS.CATEGORIES.BASE}?page=${categoryPage}&per_page=10`; 
+      let url = `${API_ENDPOINTS.CATEGORIES.BASE}?page=${categoryPage}&per_page=500`; 
       if (categorySearch) url += `&search=${encodeURIComponent(categorySearch)}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         const items = data.items || [];
@@ -320,23 +361,23 @@ const Reports = () => {
   const fetchInitialData = async () => {
     try {
       const [tRes, cRes, sRes] = await Promise.all([
-        fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=100`),
-        fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=100`),
-        fetch(`${API_ENDPOINTS.STREETS.BASE}?per_page=20`)
+        fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=500`, { headers: getAuthHeaders() }),
+        fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=500`, { headers: getAuthHeaders() }),
+        fetch(`${API_ENDPOINTS.STREETS.BASE}?per_page=500`, { headers: getAuthHeaders() })
       ]);
 
       const [tData, cData, sData] = await Promise.all([tRes.json(), cRes.json(), sRes.json()]);
       
       const trustList = tData.items || [];
       setTrusts(trustList);
-      sessionStorage.setItem('global_cached_trusts', JSON.stringify(trustList));
+      sessionStorage.setItem(TRUST_KEY, JSON.stringify(trustList));
       
       setAllCategoriesList(cData.items || []);
-      sessionStorage.setItem('reports_cached_all_categories', JSON.stringify(cData.items || []));
+      sessionStorage.setItem(CAT_KEY, JSON.stringify(cData.items || []));
       
       const streetList = sData.items || [];
       setAllStreets(streetList);
-      sessionStorage.setItem('global_cached_streets', JSON.stringify(streetList.map(s => s.name)));
+      sessionStorage.setItem(STREET_KEY, JSON.stringify(streetList.map(s => s.name)));
 
       // Sync name for the selected trust
       if (selectedTrust) {
@@ -375,7 +416,8 @@ const Reports = () => {
       const dateParam = (fromDate ? `&from_date=${fromDate}` : '') + (toDate ? `&to_date=${toDate}` : '');
       
       const res = await fetch(`${API_ENDPOINTS.REPORTS.GENERATE}?trust_id=${selectedTrust}&hijri_year=${selectedYear}${genderParam}${streetParam}${catParam}${dateParam}`, {
-        method: 'POST'
+        method: 'POST',
+        headers: getAuthHeaders()
       });
 
       if (res.ok) {
@@ -571,305 +613,451 @@ const Reports = () => {
     <div className={styles.container}>
       <header className={styles.header}>
         <h1 className={styles.mainTitle}>Donation Reports</h1>
-        
-        <div className={styles.filterRow}>
-          <button 
-            type="button"
-            className={styles.scrollBtn} 
-            onClick={() => scrollContainer(filterRowRef, 'left')}
-          >
-            <ChevronLeft size={18} />
-          </button>
-          
-          <div className={styles.filterGroup} ref={filterRowRef}>
-            {/* 1. Trust */}
-            <TrustSelect 
-              value={selectedTrust}
-              onChange={(val) => {
-                setSelectedTrust(val);
-                sessionStorage.setItem('reports_selected_trust', val);
-                const tList = JSON.parse(sessionStorage.getItem('global_cached_trusts') || '[]');
-                const t = tList.find(x => x.id === val);
-                if (t) {
-                  setSelectedTrustName(t.name);
-                  sessionStorage.setItem('reports_selected_trust_name', t.name);
-                } else {
-                  setSelectedTrustName('');
-                  sessionStorage.setItem('reports_selected_trust_name', '');
-                }
-              }}
-              placeholder="Select Trust"
-            />
-
-            {/* 2. Multi-Street Filter */}
-            <div className={styles.multiSelectContainer}>
-              <div 
-                className={styles.multiSelectTrigger}
-                onClick={() => setShowStreetDropdown(!showStreetDropdown)}
-              >
-                <span>
-                  {selectedStreets.length === 0 
-                    ? "All Streets" 
-                    : `${selectedStreets.length} Streets Selected`}
-                </span>
-                <ChevronDown size={14} />
-              </div>
-              
-              {showStreetDropdown && (
-                <div className={styles.multiSelectDropdown} onClick={(e) => e.stopPropagation()}>
-                  <div className={styles.dropdownHeader}>
-                    <span>Filter by Streets</span>
-                    <button onClick={() => setSelectedStreets([])}>Clear</button>
-                  </div>
-                  
-                  <div className={styles.dropdownSearch}>
-                    <input 
-                      type="text" 
-                      placeholder="Search streets..." 
-                      value={streetSearch}
-                      onChange={(e) => {
-                        setStreetSearch(e.target.value);
-                        setStreetPage(1);
-                      }}
-                      autoFocus
-                    />
-                  </div>
-
-                  <div className={styles.dropdownList}>
-                    {selectedStreets.length > 0 && !streetSearch && (
-                      <div className={styles.pinnedSection}>
-                         <div className={styles.sectionLabel}>Selected</div>
-                         {selectedStreets.map(sn => (
-                           <label key={`pinned-${sn}`} className={styles.checkItem}>
-                             <input 
-                               type="checkbox"
-                               checked={true}
-                             onChange={() => {
-                               const updated = selectedStreets.filter(x => x !== sn);
-                               setSelectedStreets(updated);
-                               sessionStorage.setItem('reports_selected_streets', JSON.stringify(updated));
-                             }}
-                           />
-                           <span>{sn}</span>
-                         </label>
-                       ))}
-                         <div className={styles.divider}></div>
-                      </div>
-                    )}
-
-                    {allStreets
-                      .filter(s => !selectedStreets.includes(s.name))
-                      .map(s => (
-                        <label key={s.id} className={styles.checkItem}>
-                          <input 
-                            type="checkbox"
-                            checked={selectedStreets.includes(s.name)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedStreets([...selectedStreets, s.name]);
-                              } else {
-                                setSelectedStreets(selectedStreets.filter(x => x !== s.name));
-                              }
-                            }}
-                          />
-                          <span>{s.name}</span>
-                        </label>
-                    ))}
-                    
-                    {hasMoreStreets && (
-                      <button 
-                        className={styles.miniLoadMore}
-                        onClick={() => setStreetPage(prev => prev + 1)}
-                        disabled={loadingStreets}
-                      >
-                        {loadingStreets ? "..." : "Load More"}
-                      </button>
-                    )}
-
-                    <label className={styles.checkItem}>
-                      <input 
-                        type="checkbox"
-                        checked={selectedStreets.includes('OTHER_STREETS')}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedStreets([...selectedStreets, 'OTHER_STREETS']);
-                          } else {
-                            setSelectedStreets(selectedStreets.filter(x => x !== 'OTHER_STREETS'));
-                          }
-                        }}
-                      />
-                      <span className={styles.otherLabel}>Others (Not in list)</span>
-                    </label>
-                  </div>
-                  <div className={styles.dropdownFooter}>
-                    <button onClick={() => setShowStreetDropdown(false)}>Done</button>
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            {/* 3. Year */}
-            <div className={styles.inputWrapper}>
-              <input 
-                type="text" 
-                placeholder="Year" 
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(e.target.value)}
-              />
-            </div>
-
-            {/* 4. Gender */}
-            <div className={styles.selectWrapper}>
-              <select value={selectedGender} onChange={(e) => setSelectedGender(e.target.value)}>
-                <option value="All">All Genders</option>
-                <option value="M">Male Only</option>
-                <option value="F">Female Only</option>
-              </select>
-              <ChevronDown size={14} className={styles.chevron} />
-            </div>
-
-            {/* 5. Categories Filter */}
-            <div className={styles.multiSelectContainer}>
-              <div 
-                className={styles.multiSelectTrigger}
-                onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-              >
-                <span>
-                  {selectedCategories.length === 0 
-                    ? "All Categories" 
-                    : `${selectedCategories.length} Categories Selected`}
-                </span>
-                <ChevronDown size={14} />
-              </div>
-              
-              {showCategoryDropdown && (
-                <div className={styles.multiSelectDropdown} onClick={(e) => e.stopPropagation()}>
-                  <div className={styles.dropdownHeader}>
-                    <span>Filter by Categories</span>
-                    <button onClick={() => setSelectedCategories([])}>Clear</button>
-                  </div>
-                  
-                  <div className={styles.dropdownSearch}>
-                    <input 
-                      type="text" 
-                      placeholder="Search categories..." 
-                      value={categorySearch}
-                      onChange={(e) => setCategorySearch(e.target.value)}
-                      autoFocus
-                    />
-                  </div>
-
-                  <div className={styles.dropdownList}>
-                    {selectedCategories.length > 0 && !categorySearch && (
-                      <div className={styles.pinnedSection}>
-                         <div className={styles.sectionLabel}>Selected</div>
-                         {selectedCategories.map(cid => {
-                           const c = allCategoriesList.find(x => x.id === cid);
-                           return (
-                             <label key={`pinned-cat-${cid}`} className={styles.checkItem}>
-                               <input 
-                                 type="checkbox"
-                                 checked={true}
-                               onChange={() => {
-                               const updated = selectedCategories.filter(x => x !== cid);
-                               setSelectedCategories(updated);
-                               sessionStorage.setItem('reports_selected_categories', JSON.stringify(updated));
-                             }}
-                           />
-                           <span>{c?.name || cid}</span>
-                         </label>
-                       );
-                     })}
-                         <div className={styles.divider}></div>
-                      </div>
-                    )}
-
-                    {allCategoriesList
-                      .filter(c => !selectedCategories.includes(c.id))
-                      .map(cat => (
-                        <label key={cat.id} className={styles.checkItem}>
-                          <input 
-                            type="checkbox"
-                            checked={selectedCategories.includes(cat.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedCategories([...selectedCategories, cat.id]);
-                              } else {
-                                setSelectedCategories(selectedCategories.filter(x => x !== cat.id));
-                              }
-                            }}
-                          />
-                          <span>{cat.name}</span>
-                        </label>
-                    ))}
-
-                    {hasMoreCategories && (
-                      <button 
-                        className={styles.miniLoadMore}
-                        onClick={() => setCategoryPage(prev => prev + 1)}
-                        disabled={loadingCategories}
-                      >
-                        {loadingCategories ? "..." : "Load More"}
-                      </button>
-                    )}
-                  </div>
-                  <div className={styles.dropdownFooter}>
-                    <button onClick={() => setShowCategoryDropdown(false)}>Done</button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* 6. Dates */}
-             <div className={`${styles.inputWrapper} ${styles.dateInputWrapper}`}>
-               <div className={styles.dateLabel}>From</div>
-               <input 
-                 type="date" 
-                 value={fromDate}
-                 onChange={(e) => {
-                   setFromDate(e.target.value);
-                   sessionStorage.setItem('reports_selected_from_date', e.target.value);
-                 }}
-               />
-             </div>
- 
-             <div className={`${styles.inputWrapper} ${styles.dateInputWrapper}`}>
-               <div className={styles.dateLabel}>To</div>
-               <input 
-                 type="date" 
-                 value={toDate}
-                 onChange={(e) => {
-                   setToDate(e.target.value);
-                   sessionStorage.setItem('reports_selected_to_date', e.target.value);
-                 }}
-               />
-             </div>
+          <div className={styles.filterContainer}>
+        <div className={styles.filterBar}>
+          <div className={styles.trustSelectWrapper}>
+             <TrustSelect 
+               value={selectedTrust}
+               onChange={(val) => {
+                 setSelectedTrust(val);
+                 sessionStorage.setItem('reports_selected_trust', val);
+                 const tList = JSON.parse(sessionStorage.getItem(TRUST_KEY) || '[]');
+                 const t = tList.find(x => x.id === val);
+                 if (t) {
+                   setSelectedTrustName(t.name);
+                   sessionStorage.setItem('reports_selected_trust_name', t.name);
+                 } else {
+                   setSelectedTrustName('');
+                   sessionStorage.setItem('reports_selected_trust_name', '');
+                 }
+               }}
+               placeholder="Select Trust"
+             />
           </div>
 
-          <button 
-            type="button"
-            className={styles.scrollBtn} 
-            onClick={() => scrollContainer(filterRowRef, 'right')}
-            title="Scroll Right"
-          >
-            <ChevronRight size={18} />
-          </button>
+          <div className={styles.filterBarActions}>
+            <button 
+              type="button" 
+              className={`${styles.filterToggleBtn} ${showFilters || getActiveFiltersCount() > 0 ? styles.activeFilterBtn : ''}`}
+              onClick={() => setShowFilters(!showFilters)}
+            >
+              <Filter size={16} />
+              <span>Filters</span>
+              {getActiveFiltersCount() > 0 && (
+                <span className={styles.filterBadge}>{getActiveFiltersCount()}</span>
+              )}
+              <ChevronDown size={14} className={`${styles.chevronIcon} ${showFilters ? styles.chevronOpen : ''}`} />
+            </button>
 
-          <div className={styles.actions}>
             <button 
               className={styles.generateBtn} 
               onClick={handleGenerateReport} 
               disabled={loading || !selectedTrust}
             >
-              {loading ? <Loader2 size={18} className={styles.spin} /> : <Filter size={18} />}
-              {reportGenerated ? 'Update Report' : 'Generate Report'}
+              {loading ? <Loader2 size={16} className={styles.spin} /> : <Filter size={16} />}
+              <span>{reportGenerated ? 'Update Report' : 'Generate Report'}</span>
             </button>
             
-            <button className={styles.exportBtn} onClick={handleExportClick} disabled={loading || reportData.length === 0}>
-              <FileSpreadsheet size={18} /> Export
+            <button 
+              className={styles.exportBtn} 
+              onClick={handleExportClick} 
+              disabled={loading || reportData.length === 0}
+            >
+              <FileSpreadsheet size={16} />
+              <span>Export</span>
+            </button>
+
+            <button 
+              type="button" 
+              className={styles.resetBtn} 
+              onClick={() => {
+                setSelectedTrust('');
+                setSelectedTrustName('');
+                setSelectedYear('');
+                setSelectedGender('All');
+                setSelectedStreets([]);
+                setSelectedCategories([]);
+                setFromDate('');
+                setToDate('');
+                sessionStorage.setItem('reports_selected_trust', '');
+                sessionStorage.setItem('reports_selected_trust_name', '');
+                sessionStorage.setItem('reports_selected_year', '');
+                sessionStorage.setItem('reports_selected_gender', 'All');
+                sessionStorage.setItem('reports_selected_streets', JSON.stringify([]));
+                sessionStorage.setItem('reports_selected_categories', JSON.stringify([]));
+                sessionStorage.setItem('reports_selected_from_date', '');
+                sessionStorage.setItem('reports_selected_to_date', '');
+                setShowFilters(false);
+              }}
+            >
+              Reset
             </button>
           </div>
         </div>
+
+        {showFilters && (
+          <div className={styles.filterDropdownPanel}>
+            <div className={styles.dropdownGrid}>
+              <div className={styles.gridField}>
+                <label>Hijri Year</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. 1447" 
+                  value={selectedYear}
+                  onChange={(e) => {
+                    setSelectedYear(e.target.value);
+                    sessionStorage.setItem('reports_selected_year', e.target.value);
+                  }}
+                />
+              </div>
+
+              <div className={styles.gridField}>
+                <label>Gender</label>
+                <div className={styles.selectWrapper}>
+                  <select 
+                    value={selectedGender} 
+                    onChange={(e) => {
+                      setSelectedGender(e.target.value);
+                      sessionStorage.setItem('reports_selected_gender', e.target.value);
+                    }}
+                  >
+                    <option value="All">All Genders</option>
+                    <option value="M">Male Only</option>
+                    <option value="F">Female Only</option>
+                  </select>
+                  <ChevronDown size={14} className={styles.chevron} />
+                </div>
+              </div>
+
+              <div className={styles.gridField}>
+                <label>Streets</label>
+                <div className={styles.multiSelectContainer}>
+                  <div 
+                    className={styles.multiSelectTrigger}
+                    onClick={() => setShowStreetDropdown(!showStreetDropdown)}
+                  >
+                    <span>
+                      {selectedStreets.length === 0 
+                        ? "All Streets" 
+                        : `${selectedStreets.length} Streets`}
+                    </span>
+                    <ChevronDown size={14} />
+                  </div>
+                  
+                  {showStreetDropdown && (
+                    <div className={styles.multiSelectDropdown} onClick={(e) => e.stopPropagation()}>
+                      <div className={styles.dropdownHeader}>
+                        <span>Filter by Streets</span>
+                        <button onClick={() => {
+                          setSelectedStreets([]);
+                          sessionStorage.setItem('reports_selected_streets', JSON.stringify([]));
+                        }}>Clear</button>
+                      </div>
+                      
+                      <div className={styles.dropdownSearch}>
+                        <input 
+                          type="text" 
+                          placeholder="Search streets..." 
+                          value={streetSearch}
+                          onChange={(e) => {
+                            setStreetSearch(e.target.value);
+                            setStreetPage(1);
+                          }}
+                          autoFocus
+                        />
+                      </div>
+
+                      <div className={styles.dropdownList}>
+                        {selectedStreets.length > 0 && !streetSearch && (
+                          <div className={styles.pinnedSection}>
+                             <div className={styles.sectionLabel}>Selected</div>
+                             {selectedStreets.map(sn => (
+                               <label key={`pinned-${sn}`} className={styles.checkItem}>
+                                 <input 
+                                   type="checkbox"
+                                   checked={true}
+                                   onChange={() => {
+                                     const updated = selectedStreets.filter(x => x !== sn);
+                                     setSelectedStreets(updated);
+                                     sessionStorage.setItem('reports_selected_streets', JSON.stringify(updated));
+                                   }}
+                                 />
+                                 <span>{sn}</span>
+                               </label>
+                             ))}
+                             <div className={styles.divider}></div>
+                          </div>
+                        )}
+
+                        {allStreets
+                          .filter(s => !selectedStreets.includes(s.name))
+                          .map(s => (
+                            <label key={s.id} className={styles.checkItem}>
+                              <input 
+                                type="checkbox"
+                                checked={selectedStreets.includes(s.name)}
+                                onChange={(e) => {
+                                  let updated;
+                                  if (e.target.checked) {
+                                    updated = [...selectedStreets, s.name];
+                                  } else {
+                                    updated = selectedStreets.filter(x => x !== s.name);
+                                  }
+                                  setSelectedStreets(updated);
+                                  sessionStorage.setItem('reports_selected_streets', JSON.stringify(updated));
+                                }}
+                              />
+                              <span>{s.name}</span>
+                            </label>
+                          ))}
+                        
+                        {hasMoreStreets && (
+                          <button 
+                            className={styles.miniLoadMore}
+                            onClick={() => setStreetPage(prev => prev + 1)}
+                            disabled={loadingStreets}
+                          >
+                            {loadingStreets ? "..." : "Load More"}
+                          </button>
+                        )}
+
+                        <label className={styles.checkItem}>
+                          <input 
+                            type="checkbox"
+                            checked={selectedStreets.includes('OTHER_STREETS')}
+                            onChange={(e) => {
+                              let updated;
+                              if (e.target.checked) {
+                                updated = [...selectedStreets, 'OTHER_STREETS'];
+                              } else {
+                                updated = selectedStreets.filter(x => x !== 'OTHER_STREETS');
+                              }
+                              setSelectedStreets(updated);
+                              sessionStorage.setItem('reports_selected_streets', JSON.stringify(updated));
+                            }}
+                          />
+                          <span className={styles.otherLabel}>Others (Not in list)</span>
+                        </label>
+                      </div>
+                      <div className={styles.dropdownFooter}>
+                        <button onClick={() => setShowStreetDropdown(false)}>Done</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className={styles.gridField}>
+                <label>Categories</label>
+                <div className={styles.multiSelectContainer}>
+                  <div 
+                    className={styles.multiSelectTrigger}
+                    onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+                  >
+                    <span>
+                      {selectedCategories.length === 0 
+                        ? "All Categories" 
+                        : `${selectedCategories.length} Categories`}
+                    </span>
+                    <ChevronDown size={14} />
+                  </div>
+                  
+                  {showCategoryDropdown && (
+                    <div className={styles.multiSelectDropdown} onClick={(e) => e.stopPropagation()}>
+                      <div className={styles.dropdownHeader}>
+                        <span>Filter by Categories</span>
+                        <button onClick={() => {
+                          setSelectedCategories([]);
+                          sessionStorage.setItem('reports_selected_categories', JSON.stringify([]));
+                        }}>Clear</button>
+                      </div>
+                      
+                      <div className={styles.dropdownSearch}>
+                        <input 
+                          type="text" 
+                          placeholder="Search categories..." 
+                          value={categorySearch}
+                          onChange={(e) => setCategorySearch(e.target.value)}
+                          autoFocus
+                        />
+                      </div>
+
+                      <div className={styles.dropdownList}>
+                        {selectedCategories.length > 0 && !categorySearch && (
+                          <div className={styles.pinnedSection}>
+                             <div className={styles.sectionLabel}>Selected</div>
+                             {selectedCategories.map(cid => {
+                               const c = allCategoriesList.find(x => x.id === cid);
+                               return (
+                                 <label key={`pinned-cat-${cid}`} className={styles.checkItem}>
+                                   <input 
+                                     type="checkbox"
+                                     checked={true}
+                                     onChange={() => {
+                                       const updated = selectedCategories.filter(x => x !== cid);
+                                       setSelectedCategories(updated);
+                                       sessionStorage.setItem('reports_selected_categories', JSON.stringify(updated));
+                                     }}
+                                   />
+                                   <span>{c?.name || cid}</span>
+                                 </label>
+                               );
+                             })}
+                             <div className={styles.divider}></div>
+                          </div>
+                        )}
+
+                        {allCategoriesList
+                          .filter(c => !selectedCategories.includes(c.id))
+                          .map(cat => (
+                            <label key={cat.id} className={styles.checkItem}>
+                              <input 
+                                type="checkbox"
+                                checked={selectedCategories.includes(cat.id)}
+                                onChange={(e) => {
+                                  let updated;
+                                  if (e.target.checked) {
+                                    updated = [...selectedCategories, cat.id];
+                                  } else {
+                                    updated = selectedCategories.filter(x => x !== cat.id);
+                                  }
+                                  setSelectedCategories(updated);
+                                  sessionStorage.setItem('reports_selected_categories', JSON.stringify(updated));
+                                }}
+                              />
+                              <span>{cat.name}</span>
+                            </label>
+                          ))}
+                        
+                        {hasMoreCategories && (
+                          <button 
+                            className={styles.miniLoadMore}
+                            onClick={() => setCategoryPage(prev => prev + 1)}
+                            disabled={loadingCategories}
+                          >
+                            {loadingCategories ? "..." : "Load More"}
+                          </button>
+                        )}
+                      </div>
+                      <div className={styles.dropdownFooter}>
+                        <button onClick={() => setShowCategoryDropdown(false)}>Done</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className={styles.gridField}>
+                <label>From Date</label>
+                <input 
+                  type="date" 
+                  value={fromDate}
+                  onChange={(e) => {
+                    setFromDate(e.target.value);
+                    sessionStorage.setItem('reports_selected_from_date', e.target.value);
+                  }}
+                />
+              </div>
+  
+              <div className={styles.gridField}>
+                <label>To Date</label>
+                <input 
+                  type="date" 
+                  value={toDate}
+                  onChange={(e) => {
+                    setToDate(e.target.value);
+                    sessionStorage.setItem('reports_selected_to_date', e.target.value);
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className={styles.dropdownActions}>
+              <button 
+                type="button" 
+                className={styles.applyBtn}
+                onClick={() => {
+                  setShowFilters(false);
+                }}
+              >
+                Apply Filters
+              </button>
+              <button 
+                type="button" 
+                className={styles.cancelBtn}
+                onClick={() => setShowFilters(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Applied Filters Ribbon */}
+        {getActiveFiltersCount() > 0 && (
+          <div className={styles.appliedRibbon}>
+            <span className={styles.ribbonTitle}>Applied Filters:</span>
+            <div className={styles.ribbonTags}>
+              {selectedYear && (
+                <span className={styles.filterTag}>
+                  Year: {selectedYear}
+                  <button type="button" onClick={() => clearFilter('year')}>×</button>
+                </span>
+              )}
+              {selectedGender && selectedGender !== 'All' && (
+                <span className={styles.filterTag}>
+                  Gender: {selectedGender === 'M' ? 'Male' : 'Female'}
+                  <button type="button" onClick={() => clearFilter('gender')}>×</button>
+                </span>
+              )}
+              {selectedStreets.length > 0 && (
+                <span className={styles.filterTag}>
+                  Streets: {selectedStreets.length} selected
+                  <button type="button" onClick={() => clearFilter('streets')}>×</button>
+                </span>
+              )}
+              {selectedCategories.length > 0 && (
+                <span className={styles.filterTag}>
+                  Categories: {selectedCategories.length} selected
+                  <button type="button" onClick={() => clearFilter('categories')}>×</button>
+                </span>
+              )}
+              {fromDate && (
+                <span className={styles.filterTag}>
+                  From: {fromDate}
+                  <button type="button" onClick={() => clearFilter('fromDate')}>×</button>
+                </span>
+              )}
+              {toDate && (
+                <span className={styles.filterTag}>
+                  To: {toDate}
+                  <button type="button" onClick={() => clearFilter('toDate')}>×</button>
+                </span>
+              )}
+              <button 
+                type="button" 
+                className={styles.clearAllTagsBtn}
+                onClick={() => {
+                  setSelectedYear('');
+                  setSelectedGender('All');
+                  setSelectedStreets([]);
+                  setSelectedCategories([]);
+                  setFromDate('');
+                  setToDate('');
+                  sessionStorage.setItem('reports_selected_year', '');
+                  sessionStorage.setItem('reports_selected_gender', 'All');
+                  sessionStorage.setItem('reports_selected_streets', JSON.stringify([]));
+                  sessionStorage.setItem('reports_selected_categories', JSON.stringify([]));
+                  sessionStorage.setItem('reports_selected_from_date', '');
+                  sessionStorage.setItem('reports_selected_to_date', '');
+                }}
+              >
+                Clear All
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
       </header>
 
       {lastGenerated && (

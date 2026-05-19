@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Tag, Check, ChevronDown, Loader2, X } from 'lucide-react';
 import styles from './StreetSelect.module.css'; // Reusing StreetSelect styles for consistency
-import { API_ENDPOINTS } from '../../api';
+import { API_ENDPOINTS, getAuthHeaders } from '../../api';
 
 const CategorySelect = ({ value, onChange, placeholder = "Select category...", trustId = null, isCompact = false }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const userJson = localStorage.getItem('user');
+  const userId = userJson ? JSON.parse(userJson)?.id : 'default';
+  const CACHE_KEY = `reports_cached_all_categories_${userId}`;
+
   const [categories, setCategories] = useState(() => {
-    const saved = sessionStorage.getItem('reports_cached_all_categories');
+    const saved = sessionStorage.getItem(CACHE_KEY);
     return saved ? JSON.parse(saved) : [];
   });
   const [searchResults, setSearchResults] = useState([]);
@@ -26,12 +30,12 @@ const CategorySelect = ({ value, onChange, placeholder = "Select category...", t
   const fetchInitialCategories = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=20`);
+      const res = await fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=500`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         const items = data.items || [];
         setCategories(items);
-        sessionStorage.setItem('reports_cached_all_categories', JSON.stringify(items));
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify(items));
       }
     } catch (err) {
       console.error("Error fetching categories:", err);
@@ -48,7 +52,7 @@ const CategorySelect = ({ value, onChange, placeholder = "Select category...", t
       let url = `${API_ENDPOINTS.CATEGORIES.BASE}?page=${nextPage}&per_page=15`;
       if (searchTerm) url += `&search=${encodeURIComponent(searchTerm)}`;
       
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         const newItems = data.items || [];
@@ -83,7 +87,7 @@ const CategorySelect = ({ value, onChange, placeholder = "Select category...", t
         setLoading(true);
         try {
           let url = `${API_ENDPOINTS.CATEGORIES.BASE}?search=${encodeURIComponent(searchTerm)}&per_page=15&page=1`;
-          const res = await fetch(url);
+          const res = await fetch(url, { headers: getAuthHeaders() });
           if (res.ok) {
             const data = await res.json();
             const remoteItems = data.items || [];

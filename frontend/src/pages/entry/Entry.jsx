@@ -22,34 +22,41 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import styles from './Entry.module.css';
 import DonorSearch from './DonorSearch';
-import { API_ENDPOINTS } from '../../api';
+import { API_ENDPOINTS, getAuthHeaders } from '../../api';
 import SingleEntry from './tabs/SingleEntry/SingleEntry';
 import ConfirmModal from '../../components/ConfirmModal';
 import StreetSelect from './StreetSelect';
 
 const Entry = () => {
+  const userJson = localStorage.getItem('user');
+  const userId = userJson ? JSON.parse(userJson)?.id : 'default';
+  const TRUST_KEY = `global_cached_trusts_${userId}`;
+  const CAT_KEY = `global_cached_categories_${userId}`;
+  const STREET_KEY = `global_cached_streets_${userId}`;
+  const DONOR_KEY = `global_cached_donors_${userId}`;
+
   // Cache validation / namespacing
   useEffect(() => {
     const CACHE_VERSION = `v2.2_${window.location.origin}`;
     const savedVersion = localStorage.getItem('billgenie_cache_version');
     if (savedVersion !== CACHE_VERSION) {
       console.log("♻️ Data source or version change detected. Resetting local caches...");
-      sessionStorage.removeItem('global_cached_trusts');
-      sessionStorage.removeItem('entry_cached_categories');
+      sessionStorage.removeItem(TRUST_KEY);
+      sessionStorage.removeItem(CAT_KEY);
       sessionStorage.removeItem('entry_trust_category_cache');
-      sessionStorage.removeItem('global_cached_streets');
-      sessionStorage.removeItem('global_cached_donors');
+      sessionStorage.removeItem(STREET_KEY);
+      sessionStorage.removeItem(DONOR_KEY);
       localStorage.setItem('billgenie_cache_version', CACHE_VERSION);
     }
-  }, []);
+  }, [userId]);
 
 
   const [trusts, setTrusts] = useState(() => {
-    const saved = sessionStorage.getItem('global_cached_trusts');
+    const saved = sessionStorage.getItem(TRUST_KEY);
     return saved ? JSON.parse(saved) : [];
   });
   const [categories, setCategories] = useState(() => {
-    const saved = sessionStorage.getItem('entry_cached_categories');
+    const saved = sessionStorage.getItem(CAT_KEY);
     return saved ? JSON.parse(saved) : [];
   });
   const [loading, setLoading] = useState(false);
@@ -74,8 +81,13 @@ const Entry = () => {
   const [message, setMessage] = useState({ type: '', text: '' });
   
   // Modal states
-  const [showDonorModal, setShowDonorModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showConflictModal, setShowConflictModal] = useState(false);
+  const [conflicts, setConflicts] = useState([]);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importStatus, setImportStatus] = useState('');
+  const [importLogs, setImportLogs] = useState([]);
+  const [isImporting, setIsImporting] = useState(false);
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -94,7 +106,7 @@ const Entry = () => {
       setLoading(true);
       const response = await fetch(API_ENDPOINTS.DONORS.BATCH_CREATE, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(donorsToImport)
       });
 
@@ -118,17 +130,8 @@ const Entry = () => {
     return localStorage.getItem(`entry_prefill_${key}`) || defaultVal;
   };
 
-  // New Donor state
-  const [newDonor, setNewDonor] = useState({
-    name: '',
-    gender: 'M',
-    mobile: '',
-    door_no: '',
-    street: ''
-  });
-
   // Initial state for a single entry
-  const emptyItem = { category_id: '', amount: '' };
+  const emptyItem = { category_id: '', category_name: '', amount: '' };
   const emptyDonorEntry = {
     donor_id: '',
     trust_id: getPrefilledValue('trust_id'),
@@ -136,8 +139,6 @@ const Entry = () => {
     payment_date: getPrefilledValue('payment_date', new Date().toISOString().split('T')[0]),
     notes: '',
     items: [{ ...emptyItem }],
-    showNewTrust: false,
-    trust_name: '',
     isCollapsed: false
   };
 
@@ -214,7 +215,7 @@ const Entry = () => {
     }
 
     try {
-      const res = await fetch(`${API_ENDPOINTS.CATEGORIES.BY_TRUST(trustId)}`);
+      const res = await fetch(`${API_ENDPOINTS.CATEGORIES.BY_TRUST(trustId)}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         
@@ -247,22 +248,22 @@ const Entry = () => {
   const fetchData = async () => {
     try {
       const [catRes, trustRes] = await Promise.all([
-        fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=500`),
-        fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=500`)
+        fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=500`, { headers: getAuthHeaders() }),
+        fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=500`, { headers: getAuthHeaders() })
       ]);
       
       if (catRes.ok) {
         const catData = await catRes.json();
         const cats = catData.items || [];
         setCategories(cats);
-        sessionStorage.setItem('entry_cached_categories', JSON.stringify(cats));
+        sessionStorage.setItem(CAT_KEY, JSON.stringify(cats));
       }
       
       if (trustRes.ok) {
         const trustData = await trustRes.json();
         const trustList = trustData.items || [];
         setTrusts(trustList);
-        sessionStorage.setItem('global_cached_trusts', JSON.stringify(trustList));
+        sessionStorage.setItem(TRUST_KEY, JSON.stringify(trustList));
         
         // Auto-select first trust if none selected
         if (trustList.length > 0 && !entries[0].trust_id) {
@@ -278,30 +279,6 @@ const Entry = () => {
     }
   };
 
-
-  const handleCreateDonor = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const response = await fetch(API_ENDPOINTS.DONORS.CREATE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newDonor)
-      });
-      if (response.ok) {
-        const created = await response.json();
-        setShowDonorModal(false);
-        setNewDonor({ name: '', gender: 'M', mobile: '', door_no: '', street: '' });
-        setMessage({ type: 'success', text: `Donor ${created.name} added successfully!` });
-      } else {
-        throw new Error('Failed to create donor');
-      }
-    } catch (error) {
-      setMessage({ type: 'error', text: error.message });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const downloadExcelTemplate = async () => {
     const workbook = new ExcelJS.Workbook();
@@ -360,37 +337,82 @@ const Entry = () => {
     const file = e.target.files[0];
     if (!file) return;
 
+    setIsImporting(true);
     setLoading(true);
+    setImportProgress(0);
+    setImportStatus('Preparing upload...');
+    setImportLogs([]);
     setMessage({ type: '', text: '' });
-    
+
     const formData = new FormData();
     formData.append('file', file);
     formData.append('trust_id', entries[0]?.trust_id || '');
     formData.append('hijri_year', entries[0]?.hijri_year || '1446');
 
     try {
+      const headers = getAuthHeaders();
+      delete headers['Content-Type'];
+
       const response = await fetch(API_ENDPOINTS.TRANSACTIONS.IMPORT_EXCEL, {
         method: 'POST',
+        headers,
         body: formData
       });
 
-      const data = await response.json();
-      if (response.ok) {
-        setMessage({ type: 'success', text: data.message });
-        setShowImportModal(false);
-        
-        // Refresh master data (trusts, categories)
-        await fetchData();
-        
-        // Clear specific caches to force re-fetch
-        sessionStorage.removeItem('entry_trust_category_cache');
-        sessionStorage.removeItem('global_cached_streets');
-        
-      } else {
-        throw new Error(data.detail || 'Import failed');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Upload failed with status code ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop(); // Keep the last partial line
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const data = JSON.parse(line);
+            if (data.event === 'progress') {
+              setImportProgress(data.percentage || 0);
+              setImportStatus(data.message);
+              setImportLogs(prev => [...prev, data.message]);
+            } else if (data.event === 'row') {
+              setImportProgress(data.percentage || 0);
+              setImportStatus(`Processing: row ${data.current} of ${data.total}`);
+              setImportLogs(prev => [...prev, data.message]);
+            } else if (data.event === 'complete') {
+              setImportProgress(100);
+              setImportStatus(data.message);
+              setImportLogs(prev => [...prev, `🎉 ${data.message}`]);
+              
+              // Refresh master data (trusts, categories)
+              await fetchData();
+              
+              // Clear specific caches to force re-fetch
+              const userJson = localStorage.getItem('user');
+              const userId = userJson ? JSON.parse(userJson)?.id : 'default';
+              sessionStorage.removeItem('entry_trust_category_cache');
+              sessionStorage.removeItem(`global_cached_streets_${userId}`);
+            } else if (data.event === 'error') {
+              throw new Error(data.message);
+            }
+          } catch (jsonErr) {
+            console.error("NDJSON Parse error:", jsonErr, "on line:", line);
+          }
+        }
       }
     } catch (error) {
       setMessage({ type: 'error', text: error.message });
+      setImportStatus(`Error: ${error.message}`);
+      setImportLogs(prev => [...prev, `❌ Error: ${error.message}`]);
     } finally {
       setLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -411,14 +433,17 @@ const Entry = () => {
         setLoading(true);
         const response = await fetch(API_ENDPOINTS.DONORS.BATCH_CREATE, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
+          },
           body: JSON.stringify(donorsToImport)
         });
 
         if (response.ok) {
           await fetchData(); // Refresh donors list
           setShowImportModal(false);
-          sessionStorage.removeItem('global_cached_streets');
+          sessionStorage.removeItem(STREET_KEY);
           setMessage({ type: 'success', text: `Successfully imported ${donorsToImport.length} donors!` });
         } else {
           throw new Error('Failed to import donors');
@@ -462,8 +487,6 @@ const Entry = () => {
       newEntry.trust_id = lastEntry.trust_id;
       newEntry.hijri_year = lastEntry.hijri_year;
       newEntry.payment_date = lastEntry.payment_date;
-      newEntry.showNewTrust = lastEntry.showNewTrust;
-      newEntry.trust_name = lastEntry.trust_name;
     }
 
     setEntries(prev => prev.map(e => ({ ...e, isCollapsed: true })).concat(newEntry));
@@ -505,9 +528,6 @@ const Entry = () => {
     // If trust selection changes, refresh categories for this specific entry
     if (field === 'trust_id') {
       fetchGroupedCategories(value, donorIndex);
-    } else if (field === 'showNewTrust') {
-      // Clear items if switched to "New Trust" mode
-      newEntries[donorIndex].items = [{ ...emptyItem }];
     }
     
     setEntries(newEntries);
@@ -516,6 +536,10 @@ const Entry = () => {
   const handleItemChange = (donorIndex, itemIndex, field, value) => {
     const newEntries = [...entries];
     newEntries[donorIndex].items[itemIndex][field] = value;
+    if (field === 'category_id') {
+      const cat = categories.find(c => c.id === value);
+      newEntries[donorIndex].items[itemIndex]['category_name'] = cat ? cat.name : '';
+    }
     setEntries(newEntries);
   };
 
@@ -558,8 +582,6 @@ const Entry = () => {
     });
   };
 
-
-
   const calculateDonorTotal = (donorIndex) => {
     return entries[donorIndex].items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
   };
@@ -571,7 +593,7 @@ const Entry = () => {
     const errors = [];
     entries.forEach((entry, idx) => {
       if (!entry.donor_id) errors.push(`Donor #${idx + 1} is missing.`);
-      if (!entry.trust_id && !entry.showNewTrust) errors.push(`Trust for Donor #${idx + 1} is missing.`);
+      if (!entry.trust_id) errors.push(`Trust for Donor #${idx + 1} is missing.`);
       
       const year = parseInt(entry.hijri_year);
       if (isNaN(year) || year < 1400 || year > 1500) {
@@ -593,21 +615,44 @@ const Entry = () => {
     try {
       const payloads = entries.map(entry => ({
         ...entry,
-        trust_id: entry.showNewTrust ? '' : entry.trust_id,
-        trust_name: entry.showNewTrust ? entry.trust_name : '',
         total_amount: entry.items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0),
-        items: entry.items.filter(item => item.category_id && item.amount)
+        items: entry.items
+          .filter(item => item.category_id && item.amount)
+          .map(item => {
+            const cat = categories.find(c => c.id === item.category_id);
+            return {
+              ...item,
+              category_name: cat ? cat.name : (item.category_name || '')
+            };
+          })
       }));
 
       const response = await fetch(API_ENDPOINTS.TRANSACTIONS.CREATE, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(payloads)
       });
 
       if (!response.ok) {
         const errData = await response.json();
-        throw new Error(errData.detail || 'Failed to save entries');
+        let errorMsg = errData.detail || 'Failed to save entries';
+        if (errorMsg.includes('validation_not_unique')) {
+           errorMsg = "An organization name you entered already exists.";
+        }
+        throw new Error(errorMsg);
+      }
+
+      const data = await response.json();
+      if (data.status === 'conflict') {
+        // Initialize resolution action to 'merge' for each conflict
+        const conflictsWithResolution = data.conflicts.map(c => ({
+          ...c,
+          resolution: 'merge' // default action
+        }));
+        setConflicts(conflictsWithResolution);
+        setShowConflictModal(true);
+        setLoading(false);
+        return;
       }
 
       setMessage({ type: 'success', text: 'All entries saved successfully!' });
@@ -617,6 +662,80 @@ const Entry = () => {
       setEntries([freshEntry]);
       
       // CRITICAL: Re-fetch categories for the pre-filled trust so the form isn't empty
+      if (freshEntry.trust_id) {
+        fetchGroupedCategories(freshEntry.trust_id, 0);
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResolveConflict = (index, action) => {
+    setConflicts(prev => prev.map((c, i) => 
+      i === index ? { ...c, resolution: action } : c
+    ));
+  };
+
+  const submitWithResolutions = async (resolvedConflicts) => {
+    setLoading(true);
+    setMessage({ type: '', text: '' });
+    setShowConflictModal(false);
+
+    try {
+      const payloads = entries.map((entry, idx) => {
+        const entryResolutions = resolvedConflicts
+          .filter(c => c.entry_index === idx)
+          .map(c => ({
+            category_id: c.category_id,
+            date: c.date,
+            action: c.resolution
+          }));
+
+        return {
+          ...entry,
+          total_amount: entry.items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0),
+          items: entry.items
+            .filter(item => item.category_id && item.amount)
+            .map(item => {
+              const cat = categories.find(c => c.id === item.category_id);
+              return {
+                ...item,
+                category_name: cat ? cat.name : (item.category_name || '')
+              };
+            }),
+          resolutions: entryResolutions
+        };
+      });
+
+      const response = await fetch(API_ENDPOINTS.TRANSACTIONS.CREATE, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payloads)
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.detail || 'Failed to save entries');
+      }
+
+      const data = await response.json();
+      if (data.status === 'conflict') {
+        const conflictsWithResolution = data.conflicts.map(c => ({
+          ...c,
+          resolution: 'merge'
+        }));
+        setConflicts(conflictsWithResolution);
+        setShowConflictModal(true);
+        return;
+      }
+
+      setMessage({ type: 'success', text: 'All entries saved successfully!' });
+      
+      const freshEntry = { ...emptyDonorEntry };
+      setEntries([freshEntry]);
+      
       if (freshEntry.trust_id) {
         fetchGroupedCategories(freshEntry.trust_id, 0);
       }
@@ -669,7 +788,6 @@ const Entry = () => {
               removeItemRow={removeItemRow}
               removeDonorRow={removeDonorRow}
               calculateDonorTotal={calculateDonorTotal}
-              setShowDonorModal={setShowDonorModal}
               handleToggleCollapse={handleToggleCollapse}
             />
           ))}
@@ -710,75 +828,6 @@ const Entry = () => {
         </div>
       </form>
 
-      {/* New Donor Modal */}
-      {showDonorModal && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modal}>
-            <div className={styles.modalHeader}>
-              <h2>Add New Donor</h2>
-              <button onClick={() => setShowDonorModal(false)}><X size={20} /></button>
-            </div>
-            <form onSubmit={handleCreateDonor} className={styles.modalForm}>
-              <div className={styles.inputGroup}>
-                <label>Full Name</label>
-                <input 
-                  type="text" 
-                  value={newDonor.name}
-                  onChange={(e) => setNewDonor({...newDonor, name: e.target.value.toUpperCase()})}
-                  placeholder="ENTER DONOR'S FULL NAME"
-                  required
-                  style={{ textTransform: 'uppercase' }}
-                />
-              </div>
-              <div className={styles.modalGrid}>
-                <div className={styles.inputGroup}>
-                  <label>Gender</label>
-                  <select 
-                    value={newDonor.gender}
-                    onChange={(e) => setNewDonor({...newDonor, gender: e.target.value})}
-                  >
-                    <option value="M">Male</option>
-                    <option value="F">Female</option>
-                  </select>
-                </div>
-                <div className={styles.inputGroup}>
-                  <label>Mobile Number</label>
-                  <input 
-                    type="tel" 
-                    value={newDonor.mobile}
-                    onChange={(e) => setNewDonor({...newDonor, mobile: e.target.value})}
-                    placeholder="+91 ..."
-                  />
-                </div>
-              </div>
-              <div className={styles.inputGroup}>
-                <label>Door No.</label>
-                <input 
-                  type="text" 
-                  value={newDonor.door_no}
-                  onChange={(e) => setNewDonor({...newDonor, door_no: e.target.value})}
-                  placeholder="12/A"
-                />
-              </div>
-              <div className={styles.inputGroup}>
-                <label>Street / Area</label>
-                <StreetSelect 
-                  value={newDonor.street}
-                  onChange={(val) => setNewDonor({...newDonor, street: val})}
-                  placeholder="Search or add street..."
-                />
-              </div>
-              <div className={styles.modalFooter}>
-                <button type="button" onClick={() => setShowDonorModal(false)} className={styles.cancelBtn}>Cancel</button>
-                <button type="submit" className={styles.confirmBtn} disabled={loading}>
-                  {loading ? 'Creating...' : 'Create Donor'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* Import Modal */}
       {showImportModal && (
         <div className={styles.modalOverlay}>
@@ -788,48 +837,171 @@ const Entry = () => {
                 <Upload size={24} className={styles.modalIcon} />
                 <h2>Bulk Import Transactions</h2>
               </div>
-              <button onClick={() => setShowImportModal(false)} className={styles.closeBtn}><X size={20} /></button>
+              <button 
+                onClick={() => {
+                  setShowImportModal(false);
+                  setIsImporting(false);
+                  setImportLogs([]);
+                }} 
+                className={styles.closeBtn}
+                disabled={loading}
+              >
+                <X size={20} />
+              </button>
             </div>
             
             <div className={styles.importContent}>
-              <div className={styles.stepCard}>
-                <div className={styles.stepNumber}>1</div>
-                <div className={styles.stepText}>
-                  <h4>Download Template</h4>
-                  <p>Get the correctly formatted Excel file with all your donation categories.</p>
-                </div>
-                <button onClick={downloadExcelTemplate} className={styles.templateBtn}>
-                  Download Excel Template
-                </button>
-              </div>
+              {isImporting || importLogs.length > 0 ? (
+                <div className={styles.progressContainer}>
+                  <div className={styles.progressBarWrapper}>
+                    <div className={styles.progressLabel}>
+                      <span>{importStatus}</span>
+                      <span>{importProgress}%</span>
+                    </div>
+                    <div className={styles.progressBar}>
+                      <div 
+                        className={styles.progressFill} 
+                        style={{ width: `${importProgress}%` }}
+                      ></div>
+                    </div>
+                  </div>
 
-              <div className={styles.stepCard}>
-                <div className={styles.stepNumber}>2</div>
-                <div className={styles.stepText}>
-                  <h4>Upload Spreadsheet</h4>
-                  <p>Fill in the donor details and amounts, then upload it here.</p>
-                </div>
-                <div 
-                  className={styles.excelDropZone}
-                  onClick={() => fileInputRef.current.click()}
-                >
-                  <Upload size={28} />
-                  <span>{loading ? 'Processing...' : 'Click to select Excel file'}</span>
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    onChange={handleImportExcel} 
-                    style={{ display: 'none' }} 
-                    accept=".xlsx, .xls"
-                    disabled={loading}
-                  />
-                </div>
-              </div>
+                  <div className={styles.logsConsole}>
+                    <div className={styles.logsHeader}>Import Logs</div>
+                    <div className={styles.logsBody}>
+                      {importLogs.map((log, idx) => (
+                        <div key={idx} className={styles.logLine}>
+                          {log}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
 
-              <div className={styles.importAlert}>
-                <AlertCircle size={18} />
-                <p>Ensure the <b>Trust Organization</b> and <b>Hijri Year</b> selected on the main form are correct before importing.</p>
+                  <div className={styles.progressActions}>
+                    <button 
+                      onClick={() => {
+                        setShowImportModal(false);
+                        setIsImporting(false);
+                        setImportLogs([]);
+                      }} 
+                      className={styles.doneBtn}
+                      disabled={loading}
+                    >
+                      {loading ? 'Processing...' : 'Close & Refresh'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className={styles.stepCard}>
+                    <div className={styles.stepNumber}>1</div>
+                    <div className={styles.stepText}>
+                      <h4>Download Template</h4>
+                      <p>Get the correctly formatted Excel file with all your donation categories.</p>
+                    </div>
+                    <button onClick={downloadExcelTemplate} className={styles.templateBtn}>
+                      Download Excel Template
+                    </button>
+                  </div>
+
+                  <div className={styles.stepCard}>
+                    <div className={styles.stepNumber}>2</div>
+                    <div className={styles.stepText}>
+                      <h4>Upload Spreadsheet</h4>
+                      <p>Fill in the donor details and amounts, then upload it here.</p>
+                    </div>
+                    <div 
+                      className={styles.excelDropZone}
+                      onClick={() => fileInputRef.current.click()}
+                    >
+                      <Upload size={28} />
+                      <span>Click to select Excel file</span>
+                      <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleImportExcel} 
+                        style={{ display: 'none' }} 
+                        accept=".xlsx, .xls"
+                        disabled={loading}
+                      />
+                    </div>
+                  </div>
+
+                  <div className={styles.importAlert}>
+                    <AlertCircle size={18} />
+                    <p>Ensure the <b>Trust Organization</b> and <b>Hijri Year</b> selected on the main form are correct before importing.</p>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Conflict Resolution Modal */}
+      {showConflictModal && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <div className={styles.modalHeader}>
+              <div className={styles.modalTitleGroup}>
+                <AlertCircle size={24} className={styles.modalIcon} style={{ color: '#f59e0b' }} />
+                <h2>Resolve Duplicate Entries</h2>
               </div>
+              <button onClick={() => setShowConflictModal(false)} className={styles.closeBtn}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className={styles.conflictContent}>
+              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.5' }}>
+                One or more entries already exist for this donor, trust, and year. Please choose whether to overwrite the existing amount or merge (add) them together.
+              </p>
+              
+              {conflicts.map((conflict, index) => (
+                <div key={index} className={styles.conflictItem}>
+                  <div className={styles.conflictMeta}>
+                    <div className={styles.conflictDetails}>
+                      <span className={styles.conflictDonor}>{conflict.donor_name}</span>
+                      <span className={styles.conflictCategory}>
+                        {conflict.category_name} • {conflict.date}
+                      </span>
+                    </div>
+                    
+                    <div className={styles.conflictSelector}>
+                      <button
+                        type="button"
+                        className={`${styles.conflictOptionBtn} ${conflict.resolution === 'overwrite' ? styles.activeOverwrite : ''}`}
+                        onClick={() => handleResolveConflict(index, 'overwrite')}
+                        title={`Replace old amount of ₹${conflict.old_amount} with new amount of ₹${conflict.new_amount}`}
+                      >
+                        Overwrite (₹{conflict.new_amount})
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.conflictOptionBtn} ${conflict.resolution === 'merge' ? styles.activeMerge : ''}`}
+                        onClick={() => handleResolveConflict(index, 'merge')}
+                        title={`Add new amount of ₹${conflict.new_amount} to old amount of ₹${conflict.old_amount}`}
+                      >
+                        Merge (₹{conflict.old_amount + conflict.new_amount})
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <div className={styles.modalFooter} style={{ padding: '1.5rem 2rem', borderTop: '1px solid var(--border)' }}>
+              <button type="button" onClick={() => setShowConflictModal(false)} className={styles.cancelBtn}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={styles.confirmBtn}
+                onClick={() => submitWithResolutions(conflicts)}
+                disabled={loading}
+              >
+                {loading ? 'Saving...' : 'Confirm & Save'}
+              </button>
             </div>
           </div>
         </div>

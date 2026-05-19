@@ -212,51 +212,249 @@
 }
 
 /* Filter Bar Styles */
-.filterBar {
-  display: flex;
-  align-items: stretch;
-  margin-bottom: 2rem;
+.filterContainer {
   position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   z-index: 101;
 }
 
-.filterScrollArea {
+.filterBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.donorSearchWrapper {
   flex: 1;
+  min-width: 280px;
+}
+
+.filterBarActions {
   display: flex;
+  align-items: center;
   gap: 0.75rem;
-  padding: 0.75rem 1.5rem 300px 1.5rem;
-  margin-bottom: -300px;
-  overflow-x: auto;
-  align-items: center;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  pointer-events: none;
-  --select-bg: #ffffff; /* FORCE WHITE BG FOR CUSTOM SELECTS */
 }
 
-.filterScrollArea > * {
-  flex-shrink: 0;
-  pointer-events: auto; /* RESTORE CLICKS FOR FILTER ITEMS */
-}
-
-.filterScrollArea::-webkit-scrollbar {
-  display: none;
-}
-
-.filterSection, .donorFilter, .yearFilter {
+.filterToggleBtn {
   display: flex;
   align-items: center;
-  min-width: 0;
+  gap: 0.5rem;
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  height: 40px;
 }
 
-.donorFilter {
-  flex: 1.5;
-  min-width: 200px;
+.filterToggleBtn:hover {
+  background: rgba(139, 92, 246, 0.05);
+  border-color: var(--primary);
 }
 
-.filterSection, .yearFilter {
-  flex: 1.2;
-  min-width: 180px;
+.activeFilterBtn {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.filterBadge {
+  background: var(--primary);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chevronIcon {
+  transition: transform 0.2s ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+/* Dropdown Panel */
+.filterDropdownPanel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 1rem;
+  width: calc(100% - 2rem);
+  max-width: 300px;
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  animation: slideDown 0.2s ease-out;
+}
+
+.dropdownGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.gridField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.gridField label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.gridField input {
+  height: 40px;
+  padding: 0 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: var(--text-main);
+  outline: none;
+  font-family: inherit;
+  font-size: 0.9rem;
+  transition: border-color 0.2s;
+}
+
+.gridField input:focus {
+  border-color: var(--primary);
+}
+
+.dropdownActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+.applyBtn {
+  background: var(--primary);
+  color: white;
+  border: none;
+  padding: 0.5rem 1.5rem;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  height: 38px;
+}
+
+.applyBtn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.cancelBtn {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  padding: 0.5rem 1.25rem;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  height: 38px;
+}
+
+.cancelBtn:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+/* Ribbon */
+.appliedRibbon {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.ribbonTitle {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.ribbonTags {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.filterTag {
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(139, 92, 246, 0.15);
+}
+
+.filterTag button {
+  background: transparent;
+  border: none;
+  color: var(--primary);
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  line-height: 1;
+}
+
+.filterTag button:hover {
+  color: #ef4444;
+}
+
+.clearAllTagsBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.clearAllTagsBtn:hover {
+  color: #ef4444;
 }
 
 /* Labels removed from JSX */
@@ -849,4 +1047,310 @@
     font-size: 0.8rem;
     padding: 6px 4px;
   }
+}
+
+/* Table Styles */
+.tableContainer {
+  width: 100%;
+  overflow-x: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  margin-top: 1.5rem;
+}
+
+.historyTable {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  min-width: 700px;
+}
+
+.historyTable th {
+  padding: 1rem 1.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 2px solid var(--border);
+  background: rgba(139, 92, 246, 0.02);
+}
+
+.historyTable td {
+  padding: 1.25rem 1.5rem;
+  font-size: 0.9rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-main);
+  vertical-align: middle;
+}
+
+.tableRow {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tableRow:hover {
+  background: rgba(139, 92, 246, 0.03);
+}
+
+.donorCell {
+  display: flex;
+  flex-direction: column;
+}
+
+.donorName {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.trustName {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.dateVal {
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+.rowActions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+}
+
+.rowActionBtn {
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.rowActionBtn:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.rowActionBtn.deleteBtn:hover {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.2);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+/* Viewer Modal Styles */
+.viewerContent {
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-height: 65vh;
+  overflow-y: auto;
+}
+
+.viewerHeaderBlock {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.viewerDonorInfo label,
+.viewerTotalBlock label,
+.viewerMetaItem label,
+.viewerNotes label,
+.viewerItemsSection label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  letter-spacing: 0.5px;
+}
+
+.viewerDonorInfo h3 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.viewerTotalBlock {
+  text-align: right;
+}
+
+.viewerTotalAmount {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: var(--primary);
+}
+
+.viewerMetaGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+  background: var(--bg-main);
+  padding: 1.25rem;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+}
+
+.viewerMetaItem span {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.viewerNotes p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-main);
+  background: rgba(245, 158, 11, 0.03);
+  border-left: 3px solid rgba(245, 158, 11, 0.4);
+  padding: 8px 12px;
+  border-radius: 4px;
+}
+
+.viewerItemsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.viewerTableWrapper {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.viewerTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.viewerTable th {
+  padding: 10px 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: rgba(139, 92, 246, 0.02);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.viewerTable td {
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  color: var(--text-main);
+  border-bottom: 1px solid var(--border);
+}
+
+.viewerTable tr:last-child td {
+  border-bottom: none;
+}
+
+.viewerActionBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.viewerActionBtn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-light);
+}
+
+.viewerActionBtn.viewerDeleteBtn:hover {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.2);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.scrollBtn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--primary);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  z-index: 100;
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+  opacity: 0.7;
+  align-self: center;
+}
+
+.scrollBtn:hover {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+  transform: scale(1.1);
+  opacity: 1;
+}
+
+.deleteSelectedBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #ef4444;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.deleteSelectedBtn:hover:not(:disabled) {
+  background: #dc2626;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(239, 68, 68, 0.4);
+}
+
+.deleteSelectedBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  cursor: pointer;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  transition: all 0.2s;
+}
+
+.checkbox:hover {
+  transform: scale(1.05);
 }

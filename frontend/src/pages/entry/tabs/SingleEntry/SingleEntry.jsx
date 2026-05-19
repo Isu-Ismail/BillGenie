@@ -1,5 +1,6 @@
 import React from 'react';
 import { Plus, PlusCircle, X, Trash2, ChevronDown } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import DonorSearch from '../../DonorSearch';
 import TrustSelect from '../../TrustSelect';
 import CategorySelect from '../../CategorySelect';
@@ -19,9 +20,9 @@ const SingleEntry = ({
   removeItemRow,
   removeDonorRow,
   calculateDonorTotal,
-  setShowDonorModal,
   handleToggleCollapse
 }) => {
+  const navigate = useNavigate();
   const handleKeyDown = (e, iIndex) => {
     const isArrowKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
     const isEnter = e.key === 'Enter';
@@ -120,7 +121,11 @@ const SingleEntry = ({
         <div className={styles.inputGroup}>
           <label>
             <span>Donor Name</span>
-            <button type="button" onClick={() => setShowDonorModal(true)} className={styles.inlineAddBtn}>
+            <button 
+              type="button" 
+              onClick={() => navigate('/settings', { state: { tab: 'donors', openAddModal: true } })} 
+              className={styles.inlineAddBtn}
+            >
               <Plus size={12} /> New
             </button>
           </label>
@@ -135,28 +140,16 @@ const SingleEntry = ({
             <span>Trust Organization</span>
             <button 
               type="button" 
-              onClick={() => handleEntryChange(dIndex, 'showNewTrust', !entry.showNewTrust)} 
+              onClick={() => navigate('/settings', { state: { tab: 'trusts', openAddModal: true } })} 
               className={styles.inlineAddBtn}
             >
-              {entry.showNewTrust ? <X size={12} /> : <Plus size={12} />} 
-              {entry.showNewTrust ? ' Select' : ' New'}
+              <Plus size={12} /> New
             </button>
           </label>
-          {entry.showNewTrust ? (
-            <input 
-              type="text"
-              placeholder="Organization Name"
-              value={entry.trust_name}
-              onChange={(e) => handleEntryChange(dIndex, 'trust_name', e.target.value.toUpperCase())}
-              required
-              style={{ textTransform: 'uppercase' }}
-            />
-          ) : (
-            <TrustSelect 
-              value={entry.trust_id}
-              onChange={(val) => handleEntryChange(dIndex, 'trust_id', val)}
-            />
-          )}
+          <TrustSelect 
+            value={entry.trust_id}
+            onChange={(val) => handleEntryChange(dIndex, 'trust_id', val)}
+          />
         </div>
 
         <div className={styles.inputGroup}>

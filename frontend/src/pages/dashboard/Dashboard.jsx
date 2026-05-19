@@ -17,7 +17,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import styles from './Dashboard.module.css';
 import TrustSelect from '../entry/TrustSelect';
-import { API_ENDPOINTS } from '../../api';
+import { API_ENDPOINTS, getAuthHeaders } from '../../api';
 
 
 const Dashboard = () => {
@@ -27,12 +27,17 @@ const Dashboard = () => {
     return saved ? JSON.parse(saved) : null;
   });
   const [loading, setLoading] = useState(!statsData);
+  const userJson = localStorage.getItem('user');
+  const userId = userJson ? JSON.parse(userJson)?.id : 'default';
+  const TRUST_KEY = `global_cached_trusts_${userId}`;
+  const CAT_KEY = `global_cached_categories_${userId}`;
+
   const [trusts, setTrusts] = useState(() => {
-    const saved = sessionStorage.getItem('global_cached_trusts');
+    const saved = sessionStorage.getItem(TRUST_KEY);
     return saved ? JSON.parse(saved) : [];
   });
   const [categories, setCategories] = useState(() => {
-    const saved = sessionStorage.getItem('dashboard_cached_categories');
+    const saved = sessionStorage.getItem(CAT_KEY);
     return saved ? JSON.parse(saved) : [];
   });
   const [filters, setFilters] = useState({ 
@@ -51,8 +56,8 @@ const Dashboard = () => {
   const fetchInitialData = async () => {
     try {
       const [tRes, cRes] = await Promise.all([
-        fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=20`),
-        fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=100`)
+        fetch(`${API_ENDPOINTS.TRUSTS.BASE}?per_page=500`, { headers: getAuthHeaders() }),
+        fetch(`${API_ENDPOINTS.CATEGORIES.BASE}?per_page=500`, { headers: getAuthHeaders() })
       ]);
       const tData = await tRes.json();
       const cData = await cRes.json();
@@ -61,8 +66,8 @@ const Dashboard = () => {
       setTrusts(trustList);
       setCategories(categoryList);
       
-      sessionStorage.setItem('global_cached_trusts', JSON.stringify(trustList));
-      sessionStorage.setItem('dashboard_cached_categories', JSON.stringify(categoryList));
+      sessionStorage.setItem(TRUST_KEY, JSON.stringify(trustList));
+      sessionStorage.setItem(CAT_KEY, JSON.stringify(categoryList));
 
       if (!filters.trust_id && trustList.length > 0) {
         setFilters(prev => ({ ...prev, trust_id: trustList[0].id }));
@@ -78,7 +83,7 @@ const Dashboard = () => {
     // Always call the base endpoint without params to get the LATEST metadata cache
     setLoading(true);
     try {
-      const res = await fetch(API_ENDPOINTS.STATS.BASE);
+      const res = await fetch(API_ENDPOINTS.STATS.BASE, { headers: getAuthHeaders() });
       const data = await res.json();
       
       if (data.status) {
@@ -106,7 +111,10 @@ const Dashboard = () => {
       if (filters.trust_id) url += `trust_id=${filters.trust_id}&`;
       if (filters.hijri_year) url += `hijri_year=${filters.hijri_year}`;
       
-      const res = await fetch(url, { method: 'POST' });
+      const res = await fetch(url, { 
+        method: 'POST',
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       if (data.status) {
         // Sync filters from response just in case

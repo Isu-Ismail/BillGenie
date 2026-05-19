@@ -1,13 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Building, Check, ChevronDown, X } from 'lucide-react';
 import styles from './StreetSelect.module.css'; // Reusing StreetSelect styles for consistency
-import { API_ENDPOINTS } from '../../api';
+import { API_ENDPOINTS, getAuthHeaders } from '../../api';
 
 const TrustSelect = ({ value, onChange, placeholder = "Select organization..." }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const userJson = localStorage.getItem('user');
+  const userId = userJson ? JSON.parse(userJson)?.id : 'default';
+  const CACHE_KEY = `global_cached_trusts_${userId}`;
+  const TS_KEY = `global_cached_trusts_ts_${userId}`;
+
   const [trusts, setTrusts] = useState(() => {
-    const saved = sessionStorage.getItem('global_cached_trusts');
+    const saved = sessionStorage.getItem(CACHE_KEY);
     return saved ? JSON.parse(saved) : [];
   });
   const [searchResults, setSearchResults] = useState([]);
@@ -16,8 +21,8 @@ const TrustSelect = ({ value, onChange, placeholder = "Select organization..." }
   const lastFetchedTerm = useRef('');
 
   useEffect(() => {
-    const saved = sessionStorage.getItem('global_cached_trusts');
-    const timestamp = sessionStorage.getItem('global_cached_trusts_ts');
+    const saved = sessionStorage.getItem(CACHE_KEY);
+    const timestamp = sessionStorage.getItem(TS_KEY);
     const now = Date.now();
     
     // If no cache OR cache is older than 5 minutes, fetch fresh
@@ -29,13 +34,13 @@ const TrustSelect = ({ value, onChange, placeholder = "Select organization..." }
   const fetchInitialTrusts = async () => {
     setLoading(true);
     try {
-      const res = await fetch(API_ENDPOINTS.TRUSTS.BASE + "?per_page=100");
+      const res = await fetch(API_ENDPOINTS.TRUSTS.BASE + "?per_page=100", { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         const items = data.items || [];
         setTrusts(items);
-        sessionStorage.setItem('global_cached_trusts', JSON.stringify(items));
-        sessionStorage.setItem('global_cached_trusts_ts', Date.now().toString());
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify(items));
+        sessionStorage.setItem(TS_KEY, Date.now().toString());
       }
     } catch (err) {
       console.error("Error fetching trusts:", err);
@@ -69,7 +74,7 @@ const TrustSelect = ({ value, onChange, placeholder = "Select organization..." }
       if (localMatches.length < 5) {
         setLoading(true);
         try {
-          const res = await fetch(`${API_ENDPOINTS.TRUSTS.BASE}?search=${encodeURIComponent(searchTerm)}&per_page=10`);
+          const res = await fetch(`${API_ENDPOINTS.TRUSTS.BASE}?search=${encodeURIComponent(searchTerm)}&per_page=10`, { headers: getAuthHeaders() });
           if (res.ok) {
             const data = await res.json();
             const remoteItems = data.items || [];
@@ -90,7 +95,7 @@ const TrustSelect = ({ value, onChange, placeholder = "Select organization..." }
                 }
               });
               if (changed) {
-                sessionStorage.setItem('global_cached_trusts', JSON.stringify(combined));
+                sessionStorage.setItem(CACHE_KEY, JSON.stringify(combined));
               }
               return combined;
             });
@@ -130,7 +135,7 @@ const TrustSelect = ({ value, onChange, placeholder = "Select organization..." }
 
   useEffect(() => {
     if (isOpen) {
-      const saved = sessionStorage.getItem('global_cached_trusts');
+      const saved = sessionStorage.getItem(CACHE_KEY);
       if (saved) {
         setTrusts(JSON.parse(saved));
       }

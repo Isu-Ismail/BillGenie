@@ -28,43 +28,268 @@
   letter-spacing: -0.02em;
 }
 
-.filterRow {
+.filterContainer {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  position: relative;
+}
+
+.filterBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+}
+
+.trustSelectWrapper {
+  width: 250px;
+  flex-shrink: 0;
+}
+
+.filterBarActions {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  width: 100%;
-  position: relative;
-  z-index: 101;
 }
 
-.filterGroup {
+.filterToggleBtn {
+  height: 40px;
+  padding: 0 1.25rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 0.9rem;
   display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.filterToggleBtn:hover {
+  border-color: var(--primary);
+  background: rgba(139, 92, 246, 0.05);
+}
+
+.activeFilterBtn {
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+  background: rgba(139, 92, 246, 0.08) !important;
+}
+
+.filterBadge {
+  background: var(--primary);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
+
+.chevronIcon {
+  transition: transform 0.2s ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.filterDropdownPanel {
+  position: absolute;
+  top: 50px;
+  right: 0;
+  width: 100%;
+  max-width: 600px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 1.5rem;
+  z-index: 1050;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.dropdownGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.gridField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gridField label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+
+.gridField input[type="text"],
+.gridField input[type="date"] {
+  height: 40px;
+  padding: 0 1rem;
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  font-weight: 600;
+  outline: none;
+  font-size: 0.9rem;
+  box-sizing: border-box;
+  transition: all 0.2s;
+}
+
+.gridField input:focus {
+  border-color: var(--primary);
+}
+
+.dropdownActions {
+  display: flex;
+  justify-content: flex-end;
   gap: 0.75rem;
-  flex-wrap: nowrap; /* FORCE SINGLE LINE */
-  overflow-x: auto; /* ALLOW NATURAL SCROLL */
-  overflow-y: visible; 
-  touch-action: auto; /* RESTORE NATURAL TOUCH */
-  padding: 0.5rem 0.5rem 300px 0.5rem; /* PADDING HACK FOR DROPDOWNS */
-  margin-bottom: -300px; /* OFFSET PADDING */
-  flex: 1;
-  min-width: 0;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  /* Ensure unified components like TrustSelect use white bg in Reports */
-  --select-bg: var(--bg-card);
-  pointer-events: none; /* PREVENT PADDING HACK FROM BLOCKING CLICKS BELOW */
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
 }
 
-.filterGroup > * {
-  pointer-events: auto; /* RESTORE CLICKS FOR FILTER ITEMS */
+.applyBtn {
+  height: 38px;
+  padding: 0 1.5rem;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
-.filterGroup::-webkit-scrollbar {
-  display: none;
+.applyBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(139, 92, 246, 0.3);
 }
 
-.filterGroup::-webkit-scrollbar {
-  display: none;
+.cancelBtn {
+  height: 38px;
+  padding: 0 1.25rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cancelBtn:hover {
+  background: var(--bg-main);
+  color: var(--text-main);
+}
+
+.appliedRibbon {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(139, 92, 246, 0.03);
+  border: 1px dashed rgba(139, 92, 246, 0.2);
+  border-radius: var(--radius-md);
+  flex-wrap: wrap;
+}
+
+.ribbonTitle {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.ribbonTags {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.filterTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.15);
+  color: var(--primary);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.filterTag button {
+  background: none;
+  border: none;
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+.filterTag button:hover {
+  background: var(--primary);
+  color: white;
+}
+
+.clearAllTagsBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.clearAllTagsBtn:hover {
+  color: var(--primary);
+}
+
+.resetBtn {
+  height: 40px;
+  padding: 0 1rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.resetBtn:hover {
+  background: var(--bg-main);
+  color: var(--text-main);
 }
 
 .selectWrapper, .inputWrapper, .multiSelectTrigger {

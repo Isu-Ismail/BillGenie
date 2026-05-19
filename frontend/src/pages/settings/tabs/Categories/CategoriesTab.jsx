@@ -12,7 +12,7 @@ import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from '../../../../hooks/useDebounce';
 import { subscribeToCollection } from '../../../../webhook';
 import styles from './CategoriesTab.module.css';
-import { API_ENDPOINTS } from '../../../../api';
+import { API_ENDPOINTS, getAuthHeaders } from '../../../../api';
 
 const CategoriesTab = ({ onConfirmDelete }) => {
   const queryClient = useQueryClient();
@@ -33,7 +33,7 @@ const CategoriesTab = ({ onConfirmDelete }) => {
       let url = `${API_ENDPOINTS.CATEGORIES.BASE}?page=${pageParam}&per_page=20`;
       if (debouncedSearch) url += `&search=${encodeURIComponent(debouncedSearch)}`;
       
-      const response = await fetch(url);
+      const response = await fetch(url, { headers: getAuthHeaders() });
       if (!response.ok) throw new Error('Network response was not ok');
       return response.json();
     },
@@ -54,8 +54,12 @@ const CategoriesTab = ({ onConfirmDelete }) => {
 
   const updateGlobalCache = (newCategory, oldCategoryId = null) => {
     try {
+      const userJson = localStorage.getItem('user');
+      const userId = userJson ? JSON.parse(userJson)?.id : 'default';
+      const CAT_KEY = `global_cached_categories_${userId}`;
+
       // 1. Update Reports general cache
-      const saved = sessionStorage.getItem('reports_cached_all_categories');
+      const saved = sessionStorage.getItem(CAT_KEY);
       let cats = saved ? JSON.parse(saved) : [];
       
       if (oldCategoryId) {
@@ -68,7 +72,7 @@ const CategoriesTab = ({ onConfirmDelete }) => {
         cats.push(newCategory);
       }
       
-      sessionStorage.setItem('reports_cached_all_categories', JSON.stringify(cats));
+      sessionStorage.setItem(CAT_KEY, JSON.stringify(cats));
 
       // 2. Clear trust-specific category caches to force refresh on entry page
       sessionStorage.removeItem('entry_trust_category_cache');
@@ -90,7 +94,7 @@ const CategoriesTab = ({ onConfirmDelete }) => {
     try {
       const response = await fetch(url, {
         method: isEdit ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(isEdit ? { ...editModal.data, name: newName } : { name: newName })
       });
       if (response.ok) {
@@ -98,6 +102,13 @@ const CategoriesTab = ({ onConfirmDelete }) => {
         updateGlobalCache(savedCat, isEdit ? savedCat.id : null);
         setEditModal({ isOpen: false, mode: 'edit', data: null });
         queryClient.invalidateQueries({ queryKey: ['categories'] });
+      } else {
+        const errData = await response.json();
+        let errorMsg = errData.detail || "An error occurred while saving.";
+        if (errorMsg.includes('validation_not_unique')) {
+          errorMsg = "This category name already exists.";
+        }
+        setEditModal(prev => ({ ...prev, error: errorMsg }));
       }
     } catch (err) {
       console.error("Error saving category:", err);
@@ -111,7 +122,10 @@ const CategoriesTab = ({ onConfirmDelete }) => {
       confirmText: "Delete",
       onConfirm: async () => {
         try {
-          const res = await fetch(API_ENDPOINTS.CATEGORIES.DETAIL(id), { method: 'DELETE' });
+          const res = await fetch(API_ENDPOINTS.CATEGORIES.DETAIL(id), { 
+            method: 'DELETE',
+            headers: getAuthHeaders()
+          });
           if (res.ok) {
             updateGlobalCache(null, id);
             queryClient.invalidateQueries({ queryKey: ['categories'] });
@@ -201,6 +215,11 @@ const CategoriesTab = ({ onConfirmDelete }) => {
               </button>
             </div>
             <div className={styles.modalBody}>
+              {editModal.error && (
+                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1rem', border: '1px solid rgba(239, 68, 68, 0.2)', fontSize: '0.9rem' }}>
+                  {editModal.error}
+                </div>
+              )}
               <div className={styles.modalForm}>
                 <div className={styles.inputGroup}>
                   <label>Category Name</label>

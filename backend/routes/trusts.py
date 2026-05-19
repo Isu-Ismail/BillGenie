@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Query, Header
+from pydantic import BaseModel, model_validator
 from typing import Optional, List
 from db import pb, escape_pb_filter
 from rapidfuzz import process, fuzz
@@ -13,16 +13,28 @@ class TrustRequest(BaseModel):
     email: Optional[str] = ""
     category_ids: List[str] = []
 
+    @model_validator(mode='before')
+    def strip_strings(cls, values):
+        if isinstance(values, dict):
+            for k, v in values.items():
+                if isinstance(v, str):
+                    values[k] = v.strip()
+        return values
+
 
 @router.get("/")
 async def list_trusts(
     search: Optional[str] = Query(None),
     page: int = 1,
-    per_page: int = 20
+    per_page: int = 20,
+    x_user_id: Optional[str] = Header(None)
 ):
     try:
         if not search:
-            result = pb.collection('trusts').get_list(page, per_page)
+            query_params = {}
+            if x_user_id:
+                query_params["filter"] = f'created_by = "{x_user_id}"'
+            result = pb.collection('trusts').get_list(page, per_page, query_params)
             return {
                 "items": [
                     {
@@ -41,7 +53,10 @@ async def list_trusts(
             }
 
         # FUZZY SEARCH
-        all_trusts = pb.collection('trusts').get_full_list()
+        query_params = {}
+        if x_user_id:
+            query_params["filter"] = f'created_by = "{x_user_id}"'
+        all_trusts = pb.collection('trusts').get_full_list(query_params=query_params)
         trust_map = {r.id: r for r in all_trusts}
         choices = {r.id: f"{r.name} {getattr(r, 'address', '')} {getattr(r, 'email', '')}" for r in all_trusts}
         
@@ -96,10 +111,12 @@ async def list_trusts(
         return {"items": [], "total": 0}
 
 @router.post("/create/")
-async def create_trust(trust: TrustRequest):
+async def create_trust(trust: TrustRequest, x_user_id: Optional[str] = Header(None)):
     try:
         data = trust.dict()
         data["name"] = data["name"].upper() # FORCE UPPERCASE
+        if x_user_id:
+            data["created_by"] = x_user_id
         record = pb.collection('trusts').create(data)
         return {
             "status": True, 
@@ -139,10 +156,12 @@ async def delete_trust(trust_id: str):
 
 
 @router.put("/{trust_id}")
-async def update_trust(trust_id: str, trust: TrustRequest):
+async def update_trust(trust_id: str, trust: TrustRequest, x_user_id: Optional[str] = Header(None)):
     try:
         data = trust.dict()
         data["name"] = data["name"].upper() # FORCE UPPERCASE
+        if x_user_id:
+            data["created_by"] = x_user_id
         record = pb.collection('trusts').update(trust_id, data)
         return {
             "status": True, 

@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Query, Header
+from pydantic import BaseModel, model_validator
 from typing import List, Optional
 from db import pb, escape_pb_filter
 from rapidfuzz import process, fuzz
@@ -13,15 +13,27 @@ class Category(BaseModel):
     is_active: bool = True
     trust_ids: List[str] = []
 
+    @model_validator(mode='before')
+    def strip_strings(cls, values):
+        if isinstance(values, dict):
+            for k, v in values.items():
+                if isinstance(v, str):
+                    values[k] = v.strip()
+        return values
+
 @router.get("/")
 async def get_categories(
     search: Optional[str] = Query(None),
     page: int = 1,
-    per_page: int = 20
+    per_page: int = 20,
+    x_user_id: Optional[str] = Header(None)
 ):
     try:
         if not search:
-            result = pb.collection('categories').get_list(page, per_page)
+            query_params = {}
+            if x_user_id:
+                query_params["filter"] = f'created_by = "{x_user_id}"'
+            result = pb.collection('categories').get_list(page, per_page, query_params)
             return {
                 "items": [
                     {
@@ -38,7 +50,10 @@ async def get_categories(
             }
 
         # FUZZY SEARCH
-        all_cats = pb.collection('categories').get_full_list()
+        query_params = {}
+        if x_user_id:
+            query_params["filter"] = f'created_by = "{x_user_id}"'
+        all_cats = pb.collection('categories').get_full_list(query_params=query_params)
         cat_map = {r.id: r for r in all_cats}
         choices = {r.id: f"{r.name} {getattr(r, 'description', '')}" for r in all_cats}
         
@@ -74,7 +89,7 @@ async def get_categories(
         return {"items": [], "total": 0}
 
 @router.post("/create/", response_model=Category)
-async def create_category(category: Category):
+async def create_category(category: Category, x_user_id: Optional[str] = Header(None)):
     try:
         data = {
             "name": category.name,
@@ -82,6 +97,8 @@ async def create_category(category: Category):
             "is_active": category.is_active,
             "trust_ids": category.trust_ids
         }
+        if x_user_id:
+            data["created_by"] = x_user_id
         record = pb.collection('categories').create(data)
         return Category(
             id=record.id,
@@ -94,7 +111,7 @@ async def create_category(category: Category):
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.put("/{category_id}", response_model=Category)
-async def update_category(category_id: str, category: Category):
+async def update_category(category_id: str, category: Category, x_user_id: Optional[str] = Header(None)):
     try:
         data = {
             "name": category.name,
@@ -102,6 +119,8 @@ async def update_category(category_id: str, category: Category):
             "is_active": category.is_active,
             "trust_ids": category.trust_ids
         }
+        if x_user_id:
+            data["created_by"] = x_user_id
         record = pb.collection('categories').update(category_id, data)
         return Category(
             id=record.id,
@@ -115,33 +134,41 @@ async def update_category(category_id: str, category: Category):
 
 
 @router.get("/by-trust/{trust_id}")
-async def get_categories_by_trust(trust_id: str):
+async def get_categories_by_trust(trust_id: str, x_user_id: Optional[str] = Header(None)):
     try:
-        # 1. Fetch the trust to get its category_ids
+        # 1. Fetch the trust with expanded category relation
         try:
-            trust = pb.collection('trusts').get_one(trust_id)
-            assigned_ids = getattr(trust, 'category_ids', [])
-        except:
-            assigned_ids = []
+            trust = pb.collection('trusts').get_one(trust_id, {"expand": "category_ids"})
+            trust_name = getattr(trust, 'name', '')
+            assigned_records = getattr(trust, 'expand', {}).get('category_ids', [])
+            if not isinstance(assigned_records, list):
+                assigned_records = [assigned_records] if assigned_records else []
+            assigned = [
+                {
+                    "id": c.id,
+                    "name": getattr(c, 'name', 'Unnamed'),
+                    "trust_ids": getattr(c, 'trust_ids', [])
+                } for c in assigned_records
+            ]
+        except Exception as e:
+            print(f"Error fetching trust or categories: {e}")
+            assigned = []
+            trust_name = ''
 
-        # 2. Fetch all categories
+        # 2. Fetch all categories without user/username check
         all_cats = pb.collection('categories').get_full_list()
-        cat_map = {c.id: {
-            "id": c.id,
-            "name": getattr(c, 'name', 'Unnamed'),
-            "trust_ids": getattr(c, 'trust_ids', [])
-        } for c in all_cats}
+        assigned_ids = {c["id"] for c in assigned}
         
-        # Build assigned list in the SPECIFIC order of assigned_ids
-        assigned = []
-        for cid in assigned_ids:
-            if cid in cat_map:
-                assigned.append(cat_map[cid])
-        
-        # Build others list (any category NOT in assigned_ids)
-        others = [cat_map[cid] for cid in cat_map if cid not in assigned_ids]
+        others = [
+            {
+                "id": c.id,
+                "name": getattr(c, 'name', 'Unnamed'),
+                "trust_ids": getattr(c, 'trust_ids', [])
+            } for c in all_cats if c.id not in assigned_ids
+        ]
                 
         return {
+            "trust_name": trust_name,
             "assigned": assigned,
             "others": others
         }

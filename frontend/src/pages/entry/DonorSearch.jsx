@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, User, Check, ChevronsUpDown, X } from 'lucide-react';
 
 import styles from './DonorSearch.module.css';
-import { API_ENDPOINTS } from '../../api';
+import { API_ENDPOINTS, getAuthHeaders } from '../../api';
 
 const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -11,13 +11,17 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [selectedDonor, setSelectedDonor] = useState(null);
+  const userJson = localStorage.getItem('user');
+  const userId = userJson ? JSON.parse(userJson)?.id : 'default';
+  const CACHE_KEY = `global_cached_donors_${userId}`;
+
   const [cachedDonors, setCachedDonors] = useState(() => {
     // Detect if we should use a clean cache
     const CACHE_VERSION = `v2.2_${window.location.origin}`;
     const savedVersion = localStorage.getItem('billgenie_cache_version');
     if (savedVersion !== CACHE_VERSION) return {};
     
-    const saved = sessionStorage.getItem('global_cached_donors');
+    const saved = sessionStorage.getItem(CACHE_KEY);
     return saved ? JSON.parse(saved) : {};
   });
   const containerRef = useRef(null);
@@ -39,7 +43,7 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
 
   const fetchDonorById = async (id) => {
     try {
-      const res = await fetch(API_ENDPOINTS.DONORS.INFO(id));
+      const res = await fetch(API_ENDPOINTS.DONORS.INFO(id), { headers: getAuthHeaders() });
       if (res.ok) {
         const result = await res.json();
         if (result.status) setSelectedDonor(result.data);
@@ -49,12 +53,22 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
     }
   };
 
+  const cachedDonorsRef = useRef(cachedDonors);
   useEffect(() => {
+    cachedDonorsRef.current = cachedDonors;
+  }, [cachedDonors]);
+
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setFilteredDonors(Object.values(cachedDonorsRef.current).slice(0, 20));
+      return;
+    }
+
     const delayDebounceFn = setTimeout(() => {
-      if (isOpen && searchTerm.trim()) {
+      if (isOpen) {
         // LOCAL FILTER FIRST
         const query = searchTerm.toLowerCase();
-        const localMatches = Object.values(cachedDonors).filter(d => 
+        const localMatches = Object.values(cachedDonorsRef.current).filter(d => 
           d.name.toLowerCase().includes(query) || 
           (d.mobile && d.mobile.includes(query)) ||
           (d.street && d.street.toLowerCase().includes(query))
@@ -62,6 +76,8 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
 
         if (localMatches.length > 0) {
           setFilteredDonors(localMatches.slice(0, 20));
+        } else {
+          setFilteredDonors([]);
         }
 
         // Only search remote if local matches are few or it's a new term
@@ -69,16 +85,16 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
           searchDonors(searchTerm);
         }
       }
-    }, 500); // 500ms debounce for faster feel
+    }, 500); // 500ms debounce
 
     return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm, isOpen, cachedDonors]);
+  }, [searchTerm, isOpen]);
 
   const searchDonors = async (query) => {
     setLoading(true);
     try {
       const upperQuery = query.toUpperCase();
-      const res = await fetch(`${API_ENDPOINTS.DONORS.BASE}?search=${encodeURIComponent(upperQuery)}&per_page=20`);
+      const res = await fetch(`${API_ENDPOINTS.DONORS.BASE}?search=${encodeURIComponent(upperQuery)}&per_page=20`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         const items = data.items || [];
@@ -88,7 +104,7 @@ const DonorSearch = ({ value, onChange, placeholder = "Search donor..." }) => {
         setCachedDonors(prev => {
           const updated = { ...prev };
           items.forEach(item => { updated[item.id] = item; });
-          sessionStorage.setItem('global_cached_donors', JSON.stringify(updated));
+          sessionStorage.setItem(CACHE_KEY, JSON.stringify(updated));
           return updated;
         });
 

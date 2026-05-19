@@ -1,6 +1,15 @@
 const BASE_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api`;
 
-
+export const getAuthHeaders = () => {
+  const userJson = localStorage.getItem('user');
+  const userId = userJson ? JSON.parse(userJson)?.id : '';
+  const token = localStorage.getItem('token') || '';
+  return {
+    'Content-Type': 'application/json',
+    'X-User-Id': userId,
+    'Authorization': token ? `Bearer ${token}` : ''
+  };
+};
 
 export const API_ENDPOINTS = {
   // Trusts / Organizations

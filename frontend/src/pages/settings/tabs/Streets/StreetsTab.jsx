@@ -12,7 +12,7 @@ import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from '../../../../hooks/useDebounce';
 import { subscribeToCollection } from '../../../../webhook';
 import styles from './StreetsTab.module.css';
-import { API_ENDPOINTS } from '../../../../api';
+import { API_ENDPOINTS, getAuthHeaders } from '../../../../api';
 
 const StreetsTab = ({ onConfirmDelete }) => {
   const queryClient = useQueryClient();
@@ -34,7 +34,7 @@ const StreetsTab = ({ onConfirmDelete }) => {
       let url = `${API_ENDPOINTS.STREETS.BASE}?page=${pageParam}&per_page=20`;
       if (debouncedSearch) url += `&search=${encodeURIComponent(debouncedSearch)}`;
       
-      const response = await fetch(url);
+      const response = await fetch(url, { headers: getAuthHeaders() });
       if (!response.ok) throw new Error('Network response was not ok');
       return response.json();
     },
@@ -84,13 +84,20 @@ const StreetsTab = ({ onConfirmDelete }) => {
     try {
       const response = await fetch(url, {
         method: isEdit ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ ...editModal.data, name: newName })
       });
       if (response.ok) {
         updateGlobalCache(newName, oldName);
         setEditModal({ isOpen: false, mode: 'create', data: null });
         queryClient.invalidateQueries({ queryKey: ['streets'] });
+      } else {
+        const errData = await response.json();
+        let errorMsg = errData.detail || "An error occurred while saving.";
+        if (errorMsg.includes('validation_not_unique')) {
+          errorMsg = "This street name already exists.";
+        }
+        setEditModal(prev => ({ ...prev, error: errorMsg }));
       }
     } catch (err) {
       console.error("Error saving street:", err);
@@ -105,7 +112,10 @@ const StreetsTab = ({ onConfirmDelete }) => {
       confirmText: "Delete",
       onConfirm: async () => {
         try {
-          const res = await fetch(API_ENDPOINTS.STREETS.DETAIL(id), { method: 'DELETE' });
+          const res = await fetch(API_ENDPOINTS.STREETS.DETAIL(id), { 
+            method: 'DELETE',
+            headers: getAuthHeaders()
+          });
           if (res.ok) {
             if (streetToDelete) updateGlobalCache(null, streetToDelete.name);
             queryClient.invalidateQueries({ queryKey: ['streets'] });
@@ -195,6 +205,11 @@ const StreetsTab = ({ onConfirmDelete }) => {
               </button>
             </div>
             <div className={styles.modalBody}>
+              {editModal.error && (
+                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1rem', border: '1px solid rgba(239, 68, 68, 0.2)', fontSize: '0.9rem' }}>
+                  {editModal.error}
+                </div>
+              )}
                <div className={styles.modalForm}>
                   <div className={styles.inputGroup}>
                     <label>Street Name</label>

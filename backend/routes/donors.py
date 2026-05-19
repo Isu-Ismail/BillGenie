@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Header
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from rapidfuzz import process, fuzz
 from db import pb
 
@@ -13,15 +13,27 @@ class DonorCreate(BaseModel):
     door_no: Optional[str] = ""
     street: Optional[str] = ""
 
+    @model_validator(mode='before')
+    def strip_strings(cls, values):
+        if isinstance(values, dict):
+            for k, v in values.items():
+                if isinstance(v, str):
+                    values[k] = v.strip()
+        return values
+
 @router.get("/")
 async def list_donors(
     search: Optional[str] = Query(None),
     page: int = 1,
-    per_page: int = 20
+    per_page: int = 20,
+    x_user_id: Optional[str] = Header(None)
 ):
     try:
         if not search:
-            result = pb.collection('donors').get_list(page, per_page)
+            query_params = {}
+            if x_user_id:
+                query_params["filter"] = f'created_by = "{x_user_id}"'
+            result = pb.collection('donors').get_list(page, per_page, query_params)
             return {
                 "items": [
                     {
@@ -42,7 +54,10 @@ async def list_donors(
         # FUZZY SEARCH
         # 1. Try Fuzzy Search first
         try:
-            all_donors = pb.collection('donors').get_full_list()
+            query_params = {}
+            if x_user_id:
+                query_params["filter"] = f'created_by = "{x_user_id}"'
+            all_donors = pb.collection('donors').get_full_list(query_params=query_params)
             
             search_lower = search.lower()
             donor_map = {r.id: r for r in all_donors}
@@ -82,6 +97,8 @@ async def list_donors(
             from db import escape_pb_filter
             search_esc = escape_pb_filter(search)
             filter_str = f'name ~ "{search_esc}" || mobile ~ "{search_esc}" || street ~ "{search_esc}"'
+            if x_user_id:
+                filter_str = f'({filter_str}) && created_by = "{x_user_id}"'
             
             result = pb.collection('donors').get_list(page, per_page, {"filter": filter_str})
             print(f"DEBUG: Returning {len(result.items)} standard fallback matches.")
@@ -106,7 +123,7 @@ async def list_donors(
         return {"items": [], "total": 0}
 
 @router.get("/detail/{donor_id}")
-async def get_donor_detail_explicit(donor_id: str):
+async def get_donor_detail_explicit(donor_id: str, x_user_id: Optional[str] = Header(None)):
     try:
         record = pb.collection('donors').get_one(donor_id)
         return {
@@ -124,16 +141,19 @@ async def get_donor_detail_explicit(donor_id: str):
         return {"status": False, "msg": str(e), "data": None}
 
 @router.post("/create/")
-async def create_donor(donor: DonorCreate):
+async def create_donor(donor: DonorCreate, x_user_id: Optional[str] = Header(None)):
     try:
-        new_record = pb.collection('donors').create({
+        payload = {
             "name": donor.name,
             "gender": donor.gender,
             "mobile": donor.mobile,
             "door_no": donor.door_no,
             "street": donor.street,
             "is_active": True
-        })
+        }
+        if x_user_id:
+            payload["created_by"] = x_user_id
+        new_record = pb.collection('donors').create(payload)
         return {
             "id": new_record.id,
             "name": new_record.name,
@@ -146,18 +166,21 @@ async def create_donor(donor: DonorCreate):
         raise HTTPException(status_code=400, detail=f"Failed to create donor: {str(e)}")
 
 @router.post("/batch-create/")
-async def batch_create_donors(donors: List[DonorCreate]):
+async def batch_create_donors(donors: List[DonorCreate], x_user_id: Optional[str] = Header(None)):
     results = {"success": 0, "failed": 0, "errors": []}
     for donor in donors:
         try:
-            pb.collection('donors').create({
+            payload = {
                 "name": donor.name,
                 "gender": donor.gender,
                 "mobile": donor.mobile,
                 "door_no": donor.door_no,
                 "street": donor.street,
                 "is_active": True
-            })
+            }
+            if x_user_id:
+                payload["created_by"] = x_user_id
+            pb.collection('donors').create(payload)
             results["success"] += 1
         except Exception as e:
             results["failed"] += 1
@@ -166,15 +189,18 @@ async def batch_create_donors(donors: List[DonorCreate]):
     return results
 
 @router.put("/{donor_id}")
-async def update_donor(donor_id: str, donor: DonorCreate):
+async def update_donor(donor_id: str, donor: DonorCreate, x_user_id: Optional[str] = Header(None)):
     try:
-        updated_record = pb.collection('donors').update(donor_id, {
+        payload = {
             "name": donor.name,
             "gender": donor.gender,
             "mobile": donor.mobile,
             "door_no": donor.door_no,
             "street": donor.street
-        })
+        }
+        if x_user_id:
+            payload["created_by"] = x_user_id
+        updated_record = pb.collection('donors').update(donor_id, payload)
         return {"status": True, "data": updated_record.id}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -196,11 +222,15 @@ async def delete_donor(donor_id: str):
 @router.get("/streets")
 async def list_unique_streets(
     page: int = 1,
-    per_page: int = 50
+    per_page: int = 50,
+    x_user_id: Optional[str] = Header(None)
 ):
     try:
         # Fetch only the street field from all donors
-        all_donors = pb.collection('donors').get_full_list(query_params={"fields": "street"})
+        query_params = {"fields": "street"}
+        if x_user_id:
+            query_params["filter"] = f'created_by = "{x_user_id}"'
+        all_donors = pb.collection('donors').get_full_list(query_params=query_params)
         # Filter out empty strings and get unique sorted list
         unique_streets = sorted(list(set(getattr(r, 'street', '') for r in all_donors if getattr(r, 'street', ''))))
         

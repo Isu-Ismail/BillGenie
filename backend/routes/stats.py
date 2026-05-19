@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from typing import Optional, List
 from db import pb, get_cached_data, update_cached_data
 from collections import defaultdict
@@ -6,14 +6,18 @@ from collections import defaultdict
 router = APIRouter()
 
 @router.get("/")
-async def get_dashboard_stats(trust_id: Optional[str] = None, hijri_year: Optional[str] = None):
+async def get_dashboard_stats(
+    trust_id: Optional[str] = None, 
+    hijri_year: Optional[str] = None,
+    x_user_id: Optional[str] = Header(None)
+):
     try:
         filters_dict = {"trust_id": trust_id, "hijri_year": hijri_year}
         
         # If no specific filters, get LATEST stats
         is_latest = not trust_id or not hijri_year
         
-        cached_value, cached_fields = get_cached_data("STATS", None if is_latest else filters_dict)
+        cached_value, cached_fields = get_cached_data("STATS", None if is_latest else filters_dict, x_user_id)
         
         if cached_value:
             return {
@@ -36,16 +40,20 @@ async def get_dashboard_stats(trust_id: Optional[str] = None, hijri_year: Option
         return {"status": False, "msg": str(e)}
 
 @router.post("/refresh/")
-async def refresh_stats(trust_id: Optional[str] = None, hijri_year: Optional[str] = None):
+async def refresh_stats(
+    trust_id: Optional[str] = None, 
+    hijri_year: Optional[str] = None,
+    x_user_id: Optional[str] = Header(None)
+):
     try:
-        print(f"🔄 Manually refreshing stats for trust:{trust_id} year:{hijri_year}...")
+        print(f"🔄 Manually refreshing stats for trust:{trust_id} year:{hijri_year} user:{x_user_id}...")
         
         # Calculate fresh
-        stats_data = await calculate_fresh_stats(trust_id, hijri_year)
+        stats_data = await calculate_fresh_stats(trust_id, hijri_year, x_user_id)
         
         # Save to metadata cache
         filters_dict = {"trust_id": trust_id, "hijri_year": hijri_year}
-        cached_data = update_cached_data("STATS", stats_data, filters_dict)
+        cached_data = update_cached_data("STATS", stats_data, filters_dict, x_user_id)
         
         return {
             "status": True,
@@ -57,8 +65,14 @@ async def refresh_stats(trust_id: Optional[str] = None, hijri_year: Optional[str
         print(f"Refresh Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-async def calculate_fresh_stats(trust_id: Optional[str] = None, hijri_year: Optional[str] = None):
+async def calculate_fresh_stats(
+    trust_id: Optional[str] = None, 
+    hijri_year: Optional[str] = None,
+    x_user_id: Optional[str] = None
+):
     filters = []
+    if x_user_id:
+        filters.append(f'created_by = "{x_user_id}"')
     if trust_id:
         filters.append(f'trust_id = "{trust_id}"')
     if hijri_year:
