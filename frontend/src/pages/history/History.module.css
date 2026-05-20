@@ -1354,3 +1354,21 @@
 .checkbox:hover {
   transform: scale(1.05);
 }
+
+.gridField select {
+  height: 40px;
+  padding: 0 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: var(--text-main);
+  outline: none;
+  font-family: inherit;
+  font-size: 0.9rem;
+  transition: border-color 0.2s;
+  cursor: pointer;
+}
+
+.gridField select:focus {
+  border-color: var(--primary);
+}

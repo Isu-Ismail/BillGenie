@@ -12,6 +12,8 @@ class DonorCreate(BaseModel):
     mobile: Optional[str] = ""
     door_no: Optional[str] = ""
     street: Optional[str] = ""
+    is_member: Optional[bool] = False
+    member_id: Optional[float] = None
 
     @model_validator(mode='before')
     def strip_strings(cls, values):
@@ -19,6 +21,8 @@ class DonorCreate(BaseModel):
             for k, v in values.items():
                 if isinstance(v, str):
                     values[k] = v.strip()
+            if "member_id" in values and (values["member_id"] == "" or values["member_id"] is None):
+                values["member_id"] = None
         return values
 
 @router.get("/")
@@ -42,7 +46,9 @@ async def list_donors(
                         "door_no": getattr(r, 'door_no', ''),
                         "street": getattr(r, 'street', ''),
                         "mobile": getattr(r, 'mobile', ''),
-                        "gender": getattr(r, 'gender', '')
+                        "gender": getattr(r, 'gender', ''),
+                        "is_member": getattr(r, 'is_member', False),
+                        "member_id": getattr(r, 'member_id', None)
                     }
                     for r in result.items
                 ],
@@ -79,6 +85,8 @@ async def list_donors(
                         "street": getattr(r, 'street', ''),
                         "mobile": getattr(r, 'mobile', ''),
                         "gender": getattr(r, 'gender', ''),
+                        "is_member": getattr(r, 'is_member', False),
+                        "member_id": getattr(r, 'member_id', None),
                         "score": score
                     })
             
@@ -110,7 +118,9 @@ async def list_donors(
                         "door_no": getattr(r, 'door_no', ''),
                         "street": getattr(r, 'street', ''),
                         "mobile": getattr(r, 'mobile', ''),
-                        "gender": getattr(r, 'gender', '')
+                        "gender": getattr(r, 'gender', ''),
+                        "is_member": getattr(r, 'is_member', False),
+                        "member_id": getattr(r, 'member_id', None)
                     }
                     for r in result.items
                 ],
@@ -134,7 +144,9 @@ async def get_donor_detail_explicit(donor_id: str, x_user_id: Optional[str] = He
                 "door_no": getattr(record, 'door_no', ''),
                 "street": getattr(record, 'street', ''),
                 "mobile": getattr(record, 'mobile', ''),
-                "gender": getattr(record, 'gender', '')
+                "gender": getattr(record, 'gender', ''),
+                "is_member": getattr(record, 'is_member', False),
+                "member_id": getattr(record, 'member_id', None)
             }
         }
     except Exception as e:
@@ -149,6 +161,8 @@ async def create_donor(donor: DonorCreate, x_user_id: Optional[str] = Header(Non
             "mobile": donor.mobile,
             "door_no": donor.door_no,
             "street": donor.street,
+            "is_member": donor.is_member,
+            "member_id": donor.member_id,
             "is_active": True
         }
         if x_user_id:
@@ -160,7 +174,9 @@ async def create_donor(donor: DonorCreate, x_user_id: Optional[str] = Header(Non
             "gender": getattr(new_record, 'gender', 'M'),
             "mobile": getattr(new_record, 'mobile', ''),
             "door_no": getattr(new_record, 'door_no', ''),
-            "street": getattr(new_record, 'street', '')
+            "street": getattr(new_record, 'street', ''),
+            "is_member": getattr(new_record, 'is_member', False),
+            "member_id": getattr(new_record, 'member_id', None)
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to create donor: {str(e)}")
@@ -176,6 +192,8 @@ async def batch_create_donors(donors: List[DonorCreate], x_user_id: Optional[str
                 "mobile": donor.mobile,
                 "door_no": donor.door_no,
                 "street": donor.street,
+                "is_member": donor.is_member,
+                "member_id": donor.member_id,
                 "is_active": True
             }
             if x_user_id:
@@ -196,7 +214,9 @@ async def update_donor(donor_id: str, donor: DonorCreate, x_user_id: Optional[st
             "gender": donor.gender,
             "mobile": donor.mobile,
             "door_no": donor.door_no,
-            "street": donor.street
+            "street": donor.street,
+            "is_member": donor.is_member,
+            "member_id": donor.member_id
         }
         if x_user_id:
             payload["created_by"] = x_user_id

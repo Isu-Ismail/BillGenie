@@ -13,7 +13,7 @@ services:
       - --dir=/pb_data
 
   app:
-    image: ismailisims/billgenie:v1.8
+    image: ismailisims/billgenie:v1.11
     container_name: bill-generator-app
     restart: unless-stopped
     ports:

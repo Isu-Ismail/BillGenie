@@ -31,7 +31,7 @@ const DonorsTab = ({ onConfirmDelete }) => {
       setEditModal({ 
         isOpen: true, 
         mode: 'create', 
-        data: { name: '', gender: 'M', mobile: '', door_no: '', street: '' } 
+        data: { name: '', gender: 'M', mobile: '', door_no: '', street: '', is_member: false, member_id: '' } 
       });
       // Clear location state so reloading doesn't pop it up again
       window.history.replaceState({}, document.title);
@@ -156,7 +156,7 @@ const DonorsTab = ({ onConfirmDelete }) => {
           </div>
           <button 
             className={styles.addPrimaryBtn}
-            onClick={() => setEditModal({ isOpen: true, mode: 'create', data: { name: '', gender: 'M', mobile: '', door_no: '', street: '' } })}
+            onClick={() => setEditModal({ isOpen: true, mode: 'create', data: { name: '', gender: 'M', mobile: '', door_no: '', street: '', is_member: false, member_id: '' } })}
           >
             <Plus size={18} /> Add New
           </button>
@@ -172,7 +172,14 @@ const DonorsTab = ({ onConfirmDelete }) => {
           donors.map(donor => (
             <div key={donor.id} className={styles.categoryCard}>
               <div className={styles.donorInfo}>
-                <span className={styles.catName}>{donor.name}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span className={styles.catName}>{donor.name}</span>
+                  {donor.is_member && (
+                    <span className={styles.memberBadge}>
+                      Member {donor.member_id ? `#${donor.member_id}` : ''}
+                    </span>
+                  )}
+                </div>
                 <div className={styles.metadata}>
                   <span><Phone size={12} /> {donor.mobile || 'No mobile'}</span>
                   <span><MapPin size={12} /> {donor.street ? `${donor.door_no ? donor.door_no + ', ' : ''}${donor.street}` : 'No address'}</span>
@@ -270,6 +277,43 @@ const DonorsTab = ({ onConfirmDelete }) => {
                       placeholder="Search or add street..."
                     />
                   </div>
+
+                  <div className={styles.toggleRow}>
+                    <div className={styles.toggleLabel}>
+                      <span>Is Member?</span>
+                      <span className={styles.toggleSub}>Toggle if the donor is a registered member</span>
+                    </div>
+                    <label className={styles.switch}>
+                      <input 
+                        type="checkbox"
+                        checked={editModal.data.is_member || false}
+                        onChange={(e) => setEditModal({ 
+                          ...editModal, 
+                          data: { 
+                            ...editModal.data, 
+                            is_member: e.target.checked,
+                            member_id: e.target.checked ? editModal.data.member_id : ''
+                          } 
+                        })}
+                      />
+                      <span className={styles.slider}></span>
+                    </label>
+                  </div>
+
+                  {editModal.data.is_member && (
+                    <div className={styles.inputGroup}>
+                      <label>Member ID</label>
+                      <input 
+                        type="number"
+                        value={editModal.data.member_id || ''}
+                        onChange={(e) => setEditModal({ 
+                          ...editModal, 
+                          data: { ...editModal.data, member_id: e.target.value } 
+                        })}
+                        placeholder="Enter member ID (can be empty)"
+                      />
+                    </div>
+                  )}
                </div>
             </div>
             <div className={styles.modalFooter}>

@@ -293,7 +293,6 @@ const Entry = () => {
       { header: 'GENDER', key: 'gender', width: 10 },
       { header: 'HIJRI YEAR', key: 'hijri_year', width: 12 },
       { header: 'TRUST NAME', key: 'trust_name', width: 25 },
-      { header: 'TOTAL', key: 'total', width: 15 },
     ];
 
     categories.forEach(cat => {
@@ -310,8 +309,7 @@ const Entry = () => {
       mobile: '',
       gender: '',
       hijri_year: '',
-      trust_name: '',
-      total: 0
+      trust_name: ''
     };
 
     categories.forEach(cat => {

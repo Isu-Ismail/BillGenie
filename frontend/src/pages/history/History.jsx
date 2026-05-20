@@ -58,6 +58,7 @@ const History = () => {
   const [filters, setFilters] = useState({ 
     from_date: '',
     to_date: '',
+    gender: '',
     ...lastFilters 
   });
   
@@ -83,6 +84,7 @@ const History = () => {
     if (filters.street) count++;
     if (filters.from_date) count++;
     if (filters.to_date) count++;
+    if (filters.gender) count++;
     return count;
   };
 
@@ -269,7 +271,7 @@ const History = () => {
     }
     try {
       const activeFilters = filterOverride || filters;
-      const { donor_id, hijri_year, trust_id, street, from_date, to_date } = activeFilters;
+      const { donor_id, hijri_year, trust_id, street, from_date, to_date, gender } = activeFilters;
       
       const perPage = perPageOverride || 9;
       let url = `${API_ENDPOINTS.TRANSACTIONS.BASE}?page=${pageNum}&per_page=${perPage}`;
@@ -280,6 +282,7 @@ const History = () => {
       if (street) url += `&street=${encodeURIComponent(street)}`;
       if (from_date) url += `&from_date=${from_date}`;
       if (to_date) url += `&to_date=${to_date}`;
+      if (gender) url += `&gender=${gender}`;
       
       const res = await fetch(url, { headers: getAuthHeaders() });
 
@@ -687,7 +690,7 @@ const History = () => {
               type="button" 
               className={styles.resetBtn} 
               onClick={() => {
-                const cleared = { donor_id: '', hijri_year: '', trust_id: '', street: '', from_date: '', to_date: '' };
+                const cleared = { donor_id: '', hijri_year: '', trust_id: '', street: '', from_date: '', to_date: '', gender: '' };
                 setFilters(cleared);
                 setShowFilters(false);
                 const cols = calculateItemsPerRow();
@@ -747,6 +750,18 @@ const History = () => {
                   value={filters.to_date}
                   onChange={(e) => setFilters({...filters, to_date: e.target.value})}
                 />
+              </div>
+
+              <div className={styles.gridField}>
+                <label>Gender</label>
+                <select 
+                  value={filters.gender || ''}
+                  onChange={(e) => setFilters({...filters, gender: e.target.value})}
+                >
+                  <option value="">All Genders</option>
+                  <option value="M">Male</option>
+                  <option value="F">Female</option>
+                </select>
               </div>
             </div>
 
@@ -809,11 +824,17 @@ const History = () => {
                   <button type="button" onClick={() => clearFilter('to_date')}>×</button>
                 </span>
               )}
+              {filters.gender && (
+                <span className={styles.filterTag}>
+                  Gender: {filters.gender === 'M' ? 'Male' : 'Female'}
+                  <button type="button" onClick={() => clearFilter('gender')}>×</button>
+                </span>
+              )}
               <button 
                 type="button" 
                 className={styles.clearAllTagsBtn}
                 onClick={() => {
-                  const cleared = { ...filters, hijri_year: '', trust_id: '', street: '', from_date: '', to_date: '' };
+                  const cleared = { ...filters, hijri_year: '', trust_id: '', street: '', from_date: '', to_date: '', gender: '' };
                   setFilters(cleared);
                   const cols = calculateItemsPerRow();
                   setPage(1);

@@ -36,6 +36,7 @@ async def get_transactions(
     street: Optional[str] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
+    gender: Optional[str] = None,
     page: int = 1,
     per_page: int = 10,
     x_user_id: Optional[str] = Header(None)
@@ -56,6 +57,8 @@ async def get_transactions(
             filters.append(f'payment_date >= "{from_date} 00:00:00"')
         if to_date and to_date.strip():
             filters.append(f'payment_date <= "{to_date} 23:59:59"')
+        if gender and gender.strip():
+            filters.append(f'donor_id.gender = "{gender}"')
             
         filter_str = " && ".join(filters) if filters else ""
 
