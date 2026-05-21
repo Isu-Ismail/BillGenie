@@ -24,15 +24,27 @@ def authenticate_admin():
                 os.getenv("PB_ADMIN_EMAIL", "admin@example.com"),
                 os.getenv("PB_ADMIN_PASSWORD", "Admin@1234")
             )
-            print("✅ Backend successfully authenticated with PocketBase.")
+            print("[OK] Backend successfully authenticated with PocketBase.")
             break
         except Exception as e:
-            print(f"❌ Failed to connect to PocketBase: {e}. Retrying in 10s...")
+            print(f"[ERROR] Failed to connect to PocketBase: {e}. Retrying in 10s...")
             time.sleep(10)
 
 # Start authentication in background thread to not block server startup
 thread = threading.Thread(target=authenticate_admin, daemon=True)
 thread.start()
+
+def resolve_user_id(user_id: str = None) -> str:
+    """Sanitizes and resolves the user ID, falling back to the first available user ID if invalid/empty/null."""
+    if not user_id or str(user_id).strip().lower() in ("null", "undefined", "none", "", "false"):
+        try:
+            users = pb.collection('users').get_list(1, 1)
+            if users.items:
+                return users.items[0].id
+        except Exception as ue:
+            print(f"Error fetching fallback user in resolve_user_id: {ue}")
+        return ""
+    return str(user_id).strip()
 
 def get_cached_data(data_type, filters_dict=None, user_id=None):
     """
@@ -40,13 +52,7 @@ def get_cached_data(data_type, filters_dict=None, user_id=None):
     If filters_dict is None, returns the LATEST created metadata for that type and user.
     """
     try:
-        if not user_id:
-            try:
-                users = pb.collection('users').get_list(1, 1)
-                if users.items:
-                    user_id = users.items[0].id
-            except Exception as ue:
-                print(f"Error fetching fallback user for cache get: {ue}")
+        user_id = resolve_user_id(user_id)
 
         filter_parts = [f'data_type = "{data_type}"']
         if user_id:
@@ -83,13 +89,7 @@ def update_cached_data(data_type, data, filters_dict, user_id=None):
     Updates or creates a cache entry for a specific data_type, user_id, and filter set.
     """
     try:
-        if not user_id:
-            try:
-                users = pb.collection('users').get_list(1, 1)
-                if users.items:
-                    user_id = users.items[0].id
-            except Exception as ue:
-                print(f"Error fetching fallback user for cache update: {ue}")
+        user_id = resolve_user_id(user_id)
 
         import datetime
         # Prepare value with timestamp
@@ -100,16 +100,10 @@ def update_cached_data(data_type, data, filters_dict, user_id=None):
         if user_id:
             filter_parts.append(f'created_by = "{user_id}"')
 
-        # Check for existing record with EXACT same filters to update it
-        existing = pb.collection('metadata').get_list(1, 20, {
+        # Check for existing records of this data_type and user to update/delete duplicates
+        existing = pb.collection('metadata').get_full_list(query_params={
             "filter": " && ".join(filter_parts)
         })
-        
-        target_id = None
-        for item in existing.items:
-            if item.field == filters_dict:
-                target_id = item.id
-                break
         
         payload = {
             "value": data,
@@ -119,9 +113,19 @@ def update_cached_data(data_type, data, filters_dict, user_id=None):
         if user_id:
             payload["created_by"] = user_id
         
-        if target_id:
+        if existing:
+            # Update the first existing cache record
+            target_id = existing[0].id
             pb.collection('metadata').update(target_id, payload)
+            
+            # Delete any duplicate legacy cache records of this type for the user
+            for item in existing[1:]:
+                try:
+                    pb.collection('metadata').delete(item.id)
+                except Exception as del_err:
+                    print(f"Failed to delete duplicate metadata {item.id}: {del_err}")
         else:
+            # Create new cache record
             pb.collection('metadata').create(payload)
             
         return data

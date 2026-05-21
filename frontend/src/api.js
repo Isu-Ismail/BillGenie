@@ -17,6 +17,7 @@ export const API_ENDPOINTS = {
     BASE: `${BASE_URL}/trusts/`,
     CREATE: `${BASE_URL}/trusts/create/`,
     DETAIL: (id) => `${BASE_URL}/trusts/${id}`,
+    BULK_DELETE: `${BASE_URL}/trusts/bulk-delete/`,
   },
 
   // Categories
@@ -25,6 +26,7 @@ export const API_ENDPOINTS = {
     CREATE: `${BASE_URL}/categories/create/`,
     DETAIL: (id) => `${BASE_URL}/categories/${id}`,
     BY_TRUST: (trustId) => `${BASE_URL}/categories/by-trust/${trustId}`,
+    BULK_DELETE: `${BASE_URL}/categories/bulk-delete/`,
   },
 
   // Donors
@@ -34,6 +36,7 @@ export const API_ENDPOINTS = {
     BATCH_CREATE: `${BASE_URL}/donors/batch-create/`,
     DETAIL: (id) => `${BASE_URL}/donors/${id}`,
     INFO: (id) => `${BASE_URL}/donors/detail/${id}`,
+    BULK_DELETE: `${BASE_URL}/donors/bulk-delete/`,
   },
 
   // Streets
@@ -41,6 +44,7 @@ export const API_ENDPOINTS = {
     BASE: `${BASE_URL}/streets/`,
     DETAIL: (id) => `${BASE_URL}/streets/${id}`,
     CREATE: `${BASE_URL}/streets/create/`,
+    BULK_DELETE: `${BASE_URL}/streets/bulk-delete/`,
   },
 
   // Transactions / Ledgers
@@ -56,12 +60,14 @@ export const API_ENDPOINTS = {
   STATS: {
     BASE: `${BASE_URL}/stats/`,
     REFRESH: `${BASE_URL}/stats/refresh/`,
+    CLEAR: `${BASE_URL}/stats/clear/`,
   },
 
   // Reports
   REPORTS: {
     BASE: `${BASE_URL}/reports/`,
     GENERATE: `${BASE_URL}/reports/generate/`,
+    CLEAR: `${BASE_URL}/reports/clear/`,
   },
 
   // Authentication

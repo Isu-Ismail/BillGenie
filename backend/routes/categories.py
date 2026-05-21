@@ -198,3 +198,38 @@ async def delete_category(category_id: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+class BulkDeleteRequest(BaseModel):
+    ids: List[str]
+
+@router.post("/bulk-delete/")
+async def bulk_delete_categories(request: BulkDeleteRequest):
+    try:
+        in_use_ids = []
+        for cid in request.ids:
+            usage_check = pb.collection('transactions').get_list(1, 1, {
+                "filter": f'items ~ "{escape_pb_filter(cid)}"'
+            })
+            if usage_check.total_items > 0:
+                in_use_ids.append(cid)
+        
+        if in_use_ids:
+            in_use_names = []
+            for cid in in_use_ids:
+                try:
+                    cat = pb.collection('categories').get_one(cid)
+                    in_use_names.append(getattr(cat, 'name', cid))
+                except:
+                    in_use_names.append(cid)
+            raise HTTPException(
+                status_code=400,
+                detail=f"The following categories are in use by existing donations and cannot be deleted: {', '.join(in_use_names)}. Try deactivating them instead."
+            )
+            
+        for cid in request.ids:
+            pb.collection('categories').delete(cid)
+        return {"status": "success", "message": f"{len(request.ids)} categories deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+

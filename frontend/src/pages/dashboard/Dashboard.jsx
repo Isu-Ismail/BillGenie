@@ -134,6 +134,34 @@ const Dashboard = () => {
     }
   };
 
+  const handleClearStatsCache = async () => {
+    setLoading(true);
+    try {
+      console.log("🧹 Sending request to clear dashboard stats cache...");
+      const res = await fetch(API_ENDPOINTS.STATS.CLEAR, {
+        method: 'POST',
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        // Reset filters, states, and sessionStorage cache
+        setFilters({ trust_id: '', hijri_year: '' });
+        sessionStorage.setItem('dashboard_selected_trust', '');
+        sessionStorage.setItem('dashboard_selected_year', '');
+        sessionStorage.removeItem('dashboard_cached_stats');
+        setStatsData(null);
+        
+        // Fetch default empty dashboard stats
+        await fetchStats();
+      } else {
+        console.error("Backend failed to clear stats cache.");
+      }
+    } catch (err) {
+      console.error("Error clearing stats cache:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (hasFetched.current) return;
     hasFetched.current = true;
@@ -199,6 +227,15 @@ const Dashboard = () => {
           <button className={styles.primaryBtn} onClick={handleManualRefresh} disabled={loading}>
             <RefreshCcw size={18} className={loading ? styles.spin : ''} /> 
             {loading ? 'Updating...' : 'Update Stats'}
+          </button>
+          <button 
+            type="button" 
+            className={styles.resetBtn} 
+            onClick={handleClearStatsCache}
+            disabled={loading}
+          >
+            {loading ? <Loader2 size={14} className={styles.spin} style={{ marginRight: '6px' }} /> : null}
+            Clear Cache
           </button>
         </div>
       </header>

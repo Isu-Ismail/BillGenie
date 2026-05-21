@@ -46,6 +46,28 @@
   box-shadow: 0 6px 15px rgba(139, 92, 246, 0.4);
 }
 
+.resetBtn {
+  height: 40px;
+  padding: 0 1.25rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.resetBtn:hover:not(:disabled) {
+  background: var(--bg-main);
+  color: var(--text-main);
+  border-color: var(--primary);
+}
+
 .secondaryBtn {
   background: var(--bg-card);
   border: 1px solid var(--border);

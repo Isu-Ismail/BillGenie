@@ -139,6 +139,21 @@ async def delete_street(street_id: str):
         print(f"ERROR deleting street: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
+class BulkDeleteRequest(BaseModel):
+    ids: List[str]
+
+@router.post("/bulk-delete/")
+async def bulk_delete_streets(request: BulkDeleteRequest):
+    try:
+        deleted_count = 0
+        for street_id in request.ids:
+            pb.collection('streets').delete(street_id)
+            deleted_count += 1
+        return {"status": True, "msg": f"{deleted_count} streets deleted successfully"}
+    except Exception as e:
+        print(f"ERROR bulk deleting streets: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
 @router.get("/detail/{street_id}")
 async def get_street(street_id: str):
     try:

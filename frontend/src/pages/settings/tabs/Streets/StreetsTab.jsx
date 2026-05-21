@@ -19,6 +19,13 @@ const StreetsTab = ({ onConfirmDelete }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearch = useDebounce(searchTerm, 500); // Faster search response
   const [editModal, setEditModal] = useState({ isOpen: false, mode: 'create', data: null });
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+
+  // Clear selections when search changes
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [debouncedSearch]);
 
   // Infinite query for paginated streets
   const {
@@ -104,30 +111,85 @@ const StreetsTab = ({ onConfirmDelete }) => {
     }
   };
 
-  const handleDelete = (id) => {
-    const streetToDelete = streets.find(s => s.id === id);
+  const handleSelectRow = (id) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(rowId => rowId !== id) : [...prev, id]
+    );
+  };
+
+  const streets = data?.pages.flatMap(page => page.items) || [];
+  const loadedIds = streets.map(street => street.id);
+  const allSelected = loadedIds.length > 0 && loadedIds.every(id => selectedIds.includes(id));
+
+  const handleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(prev => prev.filter(id => !loadedIds.includes(id)));
+    } else {
+      setSelectedIds(prev => {
+        const otherSelected = prev.filter(id => !loadedIds.includes(id));
+        return [...otherSelected, ...loadedIds];
+      });
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    
+    const selectedNames = streets
+      .filter(s => selectedIds.includes(s.id))
+      .map(s => s.name);
+
     onConfirmDelete({
-      title: "Delete Street",
-      message: "Are you sure you want to delete this street/locality? This cannot be undone.",
-      confirmText: "Delete",
+      title: "Delete Multiple Streets",
+      message: (
+        <div>
+          <p style={{ marginBottom: '10px' }}>
+            Are you sure you want to delete the following {selectedIds.length} selected streets? This cannot be undone.
+          </p>
+          <div style={{
+            maxHeight: '120px',
+            overflowY: 'auto',
+            background: 'var(--bg-main)',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            border: '1px solid var(--border)',
+            textAlign: 'left',
+            fontSize: '0.85rem'
+          }}>
+            <ul style={{ margin: 0, paddingLeft: '16px', listStyleType: 'disc' }}>
+              {selectedNames.map((name, i) => (
+                <li key={i} style={{ color: 'var(--text-main)', fontWeight: 600 }}>{name}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ),
+      confirmText: "Delete Selected",
       onConfirm: async () => {
         try {
-          const res = await fetch(API_ENDPOINTS.STREETS.DETAIL(id), { 
-            method: 'DELETE',
-            headers: getAuthHeaders()
+          const response = await fetch(API_ENDPOINTS.STREETS.BULK_DELETE, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ ids: selectedIds })
           });
-          if (res.ok) {
-            if (streetToDelete) updateGlobalCache(null, streetToDelete.name);
+          if (response.ok) {
+            selectedIds.forEach(id => {
+              const streetToDelete = streets.find(s => s.id === id);
+              if (streetToDelete) updateGlobalCache(null, streetToDelete.name);
+            });
+            setSelectedIds([]);
+            setIsSelectionMode(false);
             queryClient.invalidateQueries({ queryKey: ['streets'] });
+          } else {
+            const errData = await response.json();
+            alert(errData.detail || "Error bulk deleting streets.");
           }
         } catch (err) {
-          console.error(err);
+          console.error("Error bulk deleting streets:", err);
         }
       }
     });
   };
-
-  const streets = data?.pages.flatMap(page => page.items) || [];
 
   return (
     <section className={styles.sectionCard}>
@@ -149,6 +211,25 @@ const StreetsTab = ({ onConfirmDelete }) => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          {!isSelectionMode ? (
+            <button 
+              className={styles.deleteModeBtn}
+              onClick={() => setIsSelectionMode(true)}
+              disabled={streets.length === 0}
+            >
+              <Trash2 size={18} /> Delete
+            </button>
+          ) : (
+            <button 
+              className={styles.cancelSelectionBtn}
+              onClick={() => {
+                setIsSelectionMode(false);
+                setSelectedIds([]);
+              }}
+            >
+              <X size={18} /> Cancel
+            </button>
+          )}
           <button 
             className={styles.addPrimaryBtn}
             onClick={() => setEditModal({ isOpen: true, mode: 'create', data: { name: '', description: '' } })}
@@ -158,6 +239,33 @@ const StreetsTab = ({ onConfirmDelete }) => {
         </div>
       </div>
 
+      {isSelectionMode && streets.length > 0 && (
+        <div className={styles.bulkToolbar}>
+          <div className={styles.bulkLeft}>
+            <input 
+              type="checkbox" 
+              checked={allSelected} 
+              onChange={handleSelectAll} 
+              id="selectAllStreets"
+              className={styles.rowCheckbox}
+            />
+            <label htmlFor="selectAllStreets" className={styles.bulkLabel}>
+              {selectedIds.length > 0 
+                ? `Selected ${selectedIds.length} of ${streets.length} loaded` 
+                : `Select All (${streets.length} loaded)`}
+            </label>
+          </div>
+          <button 
+            className={styles.bulkDeleteBtn} 
+            onClick={handleBulkDelete}
+            disabled={selectedIds.length === 0}
+            style={selectedIds.length === 0 ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+          >
+            <Trash2 size={16} /> Delete Selected ({selectedIds.length})
+          </button>
+        </div>
+      )}
+
       <div className={styles.streetGrid}>
         {status === 'pending' ? (
           <div className={styles.loader}><Loader2 size={24} className={styles.spin} /></div>
@@ -166,16 +274,23 @@ const StreetsTab = ({ onConfirmDelete }) => {
         ) : (
           streets.map(street => (
             <div key={street.id} className={styles.categoryCard}>
-              <div className={styles.streetInfo}>
-                <span className={styles.catName}>{street.name}</span>
-                {street.description && <p className={styles.description}>{street.description}</p>}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1 }}>
+                {isSelectionMode && (
+                  <input 
+                    type="checkbox" 
+                    checked={selectedIds.includes(street.id)} 
+                    onChange={() => handleSelectRow(street.id)} 
+                    className={styles.rowCheckbox}
+                  />
+                )}
+                <div className={styles.streetInfo}>
+                  <span className={styles.catName}>{street.name}</span>
+                  {street.description && <p className={styles.description}>{street.description}</p>}
+                </div>
               </div>
               <div className={styles.catActions}>
                 <button onClick={() => setEditModal({ isOpen: true, mode: 'edit', data: { ...street } })} className={styles.editBtn}>
                   <Edit size={14} />
-                </button>
-                <button onClick={() => handleDelete(street.id)} className={styles.deleteBtn}>
-                  <Trash2 size={14} />
                 </button>
               </div>
             </div>

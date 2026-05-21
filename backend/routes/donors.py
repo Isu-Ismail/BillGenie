@@ -132,28 +132,40 @@ async def list_donors(
         print(f"ERROR listing donors: {e}")
         return {"items": [], "total": 0}
 
-@router.get("/detail/{donor_id}")
-@router.get("/{donor_id}")
-async def get_donor_detail_explicit(donor_id: str, x_user_id: Optional[str] = Header(None)):
+@router.get("/streets")
+async def list_unique_streets(
+    page: int = 1,
+    per_page: int = 50,
+    x_user_id: Optional[str] = Header(None)
+):
     try:
-        record = pb.collection('donors').get_one(donor_id)
+        # Fetch only the street field from all donors
+        query_params = {"fields": "street"}
+        if x_user_id:
+            query_params["filter"] = f'created_by = "{x_user_id}"'
+        all_donors = pb.collection('donors').get_full_list(query_params=query_params)
+        # Filter out empty strings and get unique sorted list
+        unique_streets = sorted(list(set(getattr(r, 'street', '') for r in all_donors if getattr(r, 'street', ''))))
+        
+        # Format as objects for frontend components that expect name/id
+        items = [{"id": s, "name": s, "description": ""} for s in unique_streets]
+        
+        # Handle manual pagination for this derived list
+        start = (page - 1) * per_page
+        end = start + per_page
+        
         return {
-            "status": True,
-            "data": {
-                "id": record.id,
-                "name": record.name,
-                "door_no": getattr(record, 'door_no', ''),
-                "street": getattr(record, 'street', ''),
-                "mobile": getattr(record, 'mobile', ''),
-                "gender": getattr(record, 'gender', ''),
-                "is_member": getattr(record, 'is_member', False),
-                "member_id": getattr(record, 'member_id', None)
-            }
+            "items": items[start:end],
+            "total": len(items),
+            "page": page,
+            "per_page": per_page
         }
     except Exception as e:
-        return {"status": False, "msg": str(e), "data": None}
+        print(f"Error fetching unique streets: {e}")
+        return {"items": [], "total": 0, "page": 1, "per_page": per_page}
 
 @router.post("/create/")
+@router.post("/create")
 async def create_donor(donor: DonorCreate, x_user_id: Optional[str] = Header(None)):
     try:
         payload = {
@@ -183,6 +195,7 @@ async def create_donor(donor: DonorCreate, x_user_id: Optional[str] = Header(Non
         raise HTTPException(status_code=400, detail=f"Failed to create donor: {str(e)}")
 
 @router.post("/batch-create/")
+@router.post("/batch-create")
 async def batch_create_donors(donors: List[DonorCreate], x_user_id: Optional[str] = Header(None)):
     results = {"success": 0, "failed": 0, "errors": []}
     for donor in donors:
@@ -206,6 +219,50 @@ async def batch_create_donors(donors: List[DonorCreate], x_user_id: Optional[str
             results["errors"].append(f"Error in {donor.name}: {str(e)}")
     
     return results
+
+class BulkDeleteRequest(BaseModel):
+    ids: List[str]
+
+@router.post("/bulk-delete")
+@router.post("/bulk-delete/")
+async def bulk_delete_donors(request: BulkDeleteRequest):
+    try:
+        deleted_count = 0
+        for donor_id in request.ids:
+            # 1. Cascade delete transactions
+            transactions = pb.collection('transactions').get_full_list(query_params={"filter": f'donor_id = "{donor_id}"'})
+            for t in transactions:
+                pb.collection('transactions').delete(t.id)
+            
+            # 2. Delete the donor
+            pb.collection('donors').delete(donor_id)
+            deleted_count += 1
+            
+        return {"status": True, "msg": f"{deleted_count} donors and associated data deleted successfully"}
+    except Exception as e:
+        print(f"ERROR bulk deleting donors: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/detail/{donor_id}")
+@router.get("/{donor_id}")
+async def get_donor_detail_explicit(donor_id: str, x_user_id: Optional[str] = Header(None)):
+    try:
+        record = pb.collection('donors').get_one(donor_id)
+        return {
+            "status": True,
+            "data": {
+                "id": record.id,
+                "name": record.name,
+                "door_no": getattr(record, 'door_no', ''),
+                "street": getattr(record, 'street', ''),
+                "mobile": getattr(record, 'mobile', ''),
+                "gender": getattr(record, 'gender', ''),
+                "is_member": getattr(record, 'is_member', False),
+                "member_id": getattr(record, 'member_id', None)
+            }
+        }
+    except Exception as e:
+        return {"status": False, "msg": str(e), "data": None}
 
 @router.put("/{donor_id}")
 async def update_donor(donor_id: str, donor: DonorCreate, x_user_id: Optional[str] = Header(None)):
@@ -239,36 +296,4 @@ async def delete_donor(donor_id: str):
         return {"status": True, "msg": "Donor and all associated data deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-@router.get("/streets")
-async def list_unique_streets(
-    page: int = 1,
-    per_page: int = 50,
-    x_user_id: Optional[str] = Header(None)
-):
-    try:
-        # Fetch only the street field from all donors
-        query_params = {"fields": "street"}
-        if x_user_id:
-            query_params["filter"] = f'created_by = "{x_user_id}"'
-        all_donors = pb.collection('donors').get_full_list(query_params=query_params)
-        # Filter out empty strings and get unique sorted list
-        unique_streets = sorted(list(set(getattr(r, 'street', '') for r in all_donors if getattr(r, 'street', ''))))
-        
-        # Format as objects for frontend components that expect name/id
-        items = [{"id": s, "name": s, "description": ""} for s in unique_streets]
-        
-        # Handle manual pagination for this derived list
-        start = (page - 1) * per_page
-        end = start + per_page
-        
-        return {
-            "items": items[start:end],
-            "total": len(items),
-            "page": page,
-            "per_page": per_page
-        }
-    except Exception as e:
-        print(f"Error fetching unique streets: {e}")
-        return {"items": [], "total": 0, "page": 1, "per_page": per_page}
 

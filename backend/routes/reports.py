@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Header
 from typing import Optional, List
-from db import pb, get_cached_data, update_cached_data
+from db import pb, get_cached_data, update_cached_data, resolve_user_id
 from collections import defaultdict
 
 router = APIRouter()
@@ -93,6 +93,33 @@ async def generate_report(
         }
     except Exception as e:
         print(f"Generation Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/clear/")
+async def clear_report_cache(x_user_id: Optional[str] = Header(None)):
+    try:
+        user_id = resolve_user_id(x_user_id)
+        print(f"🧹 Clearing report metadata cache for user: {user_id}")
+        
+        filter_parts = ['data_type = "REPORT"']
+        if user_id:
+            filter_parts.append(f'created_by = "{user_id}"')
+            
+        filter_str = " && ".join(filter_parts)
+        records = pb.collection('metadata').get_full_list(query_params={"filter": filter_str})
+        
+        deleted_count = 0
+        for r in records:
+            pb.collection('metadata').delete(r.id)
+            deleted_count += 1
+            
+        return {
+            "status": True,
+            "msg": f"Successfully cleared {deleted_count} report metadata cache entries.",
+            "deleted_count": deleted_count
+        }
+    except Exception as e:
+        print(f"Error clearing report metadata: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 async def calculate_fresh_report(

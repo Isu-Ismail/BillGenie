@@ -401,15 +401,17 @@ const Reports = () => {
     if (!selectedTrust) return;
     setLoading(true);
     try {
-      // 1. Try to load from cache first using current filters
-      const wasCached = await loadCachedReport(true);
-      if (wasCached) {
-        console.log("✅ Using existing backend cache.");
-        return;
+      // 1. Try to load from cache first using current filters ONLY if we're not explicitly updating/refreshing
+      if (!reportGenerated) {
+        const wasCached = await loadCachedReport(true);
+        if (wasCached) {
+          console.log("✅ Using existing backend cache.");
+          return;
+        }
       }
       
-      // 2. Only if cache doesn't exist, generate fresh
-      console.log("🚀 No cache found. Generating fresh report...");
+      // 2. Otherwise (or if cache doesn't exist/we are updating), generate fresh
+      console.log("🚀 Generating/Updating fresh report...");
       const streetParam = selectedStreets.length > 0 ? `&streets=${encodeURIComponent(selectedStreets.join(','))}` : '';
       const genderParam = selectedGender !== 'All' ? `&gender=${selectedGender}` : '';
       const catParam = selectedCategories.length > 0 ? `&categories=${encodeURIComponent(selectedCategories.join(','))}` : '';
@@ -434,6 +436,57 @@ const Reports = () => {
       }
     } catch (error) {
       console.error("Error in report workflow:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClearReportCache = async () => {
+    setLoading(true);
+    try {
+      console.log("🧹 Sending request to clear report cache...");
+      const res = await fetch(API_ENDPOINTS.REPORTS.CLEAR, {
+        method: 'POST',
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        // Reset all frontend state
+        setSelectedTrust('');
+        setSelectedTrustName('');
+        setSelectedYear('');
+        setSelectedGender('All');
+        setSelectedStreets([]);
+        setSelectedCategories([]);
+        setFromDate('');
+        setToDate('');
+        setReportData([]);
+        setCategories([]);
+        setSummary(null);
+        setReportGenerated(false);
+        setLastGenerated(null);
+        
+        // Clear session storage
+        sessionStorage.setItem('reports_selected_trust', '');
+        sessionStorage.setItem('reports_selected_trust_name', '');
+        sessionStorage.setItem('reports_selected_year', '');
+        sessionStorage.setItem('reports_selected_gender', 'All');
+        sessionStorage.setItem('reports_selected_streets', JSON.stringify([]));
+        sessionStorage.setItem('reports_selected_categories', JSON.stringify([]));
+        sessionStorage.setItem('reports_selected_from_date', '');
+        sessionStorage.setItem('reports_selected_to_date', '');
+        
+        sessionStorage.removeItem('reports_cached_data');
+        sessionStorage.removeItem('reports_cached_categories');
+        sessionStorage.removeItem('reports_cached_summary');
+        sessionStorage.removeItem('reports_cached_last_generated');
+        sessionStorage.removeItem('reports_cached_generated_flag');
+        
+        setShowFilters(false);
+      } else {
+        console.error("Backend failed to clear report cache.");
+      }
+    } catch (err) {
+      console.error("Error clearing report cache:", err);
     } finally {
       setLoading(false);
     }
@@ -670,27 +723,11 @@ const Reports = () => {
             <button 
               type="button" 
               className={styles.resetBtn} 
-              onClick={() => {
-                setSelectedTrust('');
-                setSelectedTrustName('');
-                setSelectedYear('');
-                setSelectedGender('All');
-                setSelectedStreets([]);
-                setSelectedCategories([]);
-                setFromDate('');
-                setToDate('');
-                sessionStorage.setItem('reports_selected_trust', '');
-                sessionStorage.setItem('reports_selected_trust_name', '');
-                sessionStorage.setItem('reports_selected_year', '');
-                sessionStorage.setItem('reports_selected_gender', 'All');
-                sessionStorage.setItem('reports_selected_streets', JSON.stringify([]));
-                sessionStorage.setItem('reports_selected_categories', JSON.stringify([]));
-                sessionStorage.setItem('reports_selected_from_date', '');
-                sessionStorage.setItem('reports_selected_to_date', '');
-                setShowFilters(false);
-              }}
+              onClick={handleClearReportCache}
+              disabled={loading}
             >
-              Reset
+              {loading ? <Loader2 size={14} className={styles.spin} style={{ marginRight: '6px' }} /> : null}
+              Clear Cache
             </button>
           </div>
         </div>

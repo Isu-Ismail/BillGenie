@@ -154,6 +154,44 @@ async def delete_trust(trust_id: str):
         print(f"ERROR deleting trust: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
+class BulkDeleteRequest(BaseModel):
+    ids: List[str]
+
+@router.post("/bulk-delete/")
+async def bulk_delete_trusts(request: BulkDeleteRequest):
+    try:
+        in_use_ids = []
+        for trust_id in request.ids:
+            usage_check = pb.collection('transactions').get_list(1, 1, {
+                "filter": f'trust_id = "{escape_pb_filter(trust_id)}"'
+            })
+            if usage_check.total_items > 0:
+                in_use_ids.append(trust_id)
+                
+        if in_use_ids:
+            in_use_names = []
+            for tid in in_use_ids:
+                try:
+                    trust = pb.collection('trusts').get_one(tid)
+                    in_use_names.append(getattr(trust, 'name', tid))
+                except:
+                    in_use_names.append(tid)
+            raise HTTPException(
+                status_code=400,
+                detail=f"The following trusts have active donation records and cannot be deleted: {', '.join(in_use_names)}. All transactions must be removed first."
+            )
+            
+        deleted_count = 0
+        for trust_id in request.ids:
+            pb.collection('trusts').delete(trust_id)
+            deleted_count += 1
+        return {"status": True, "msg": f"{deleted_count} trust organizations deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR bulk deleting trusts: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 @router.put("/{trust_id}")
 async def update_trust(trust_id: str, trust: TrustRequest, x_user_id: Optional[str] = Header(None)):

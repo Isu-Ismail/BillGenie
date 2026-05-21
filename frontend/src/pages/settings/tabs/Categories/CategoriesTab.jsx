@@ -19,6 +19,13 @@ const CategoriesTab = ({ onConfirmDelete }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearch = useDebounce(searchTerm, 500); // Faster search response
   const [editModal, setEditModal] = useState({ isOpen: false, mode: 'edit', data: null });
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+
+  // Clear selections when search changes
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [debouncedSearch]);
 
   // Infinite query for paginated categories
   const {
@@ -67,7 +74,7 @@ const CategoriesTab = ({ onConfirmDelete }) => {
       }
       
       if (newCategory) {
-        // If edit, it might already be there, replace it
+        // If edit, replace
         cats = cats.filter(c => c.id !== newCategory.id);
         cats.push(newCategory);
       }
@@ -115,32 +122,82 @@ const CategoriesTab = ({ onConfirmDelete }) => {
     }
   };
 
-  const handleDelete = (id) => {
+  const handleSelectRow = (id) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(rowId => rowId !== id) : [...prev, id]
+    );
+  };
+
+  const categories = data?.pages.flatMap(page => page.items) || [];
+  const loadedIds = categories.map(cat => cat.id);
+  const allSelected = loadedIds.length > 0 && loadedIds.every(id => selectedIds.includes(id));
+
+  const handleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(prev => prev.filter(id => !loadedIds.includes(id)));
+    } else {
+      setSelectedIds(prev => {
+        const otherSelected = prev.filter(id => !loadedIds.includes(id));
+        return [...otherSelected, ...loadedIds];
+      });
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    
+    const selectedNames = categories
+      .filter(c => selectedIds.includes(c.id))
+      .map(c => c.name);
+
     onConfirmDelete({
-      title: "Delete Category",
-      message: "Are you sure you want to delete this category? This cannot be undone.",
-      confirmText: "Delete",
+      title: "Delete Multiple Categories",
+      message: (
+        <div>
+          <p style={{ marginBottom: '10px' }}>
+            Are you sure you want to delete the following {selectedIds.length} selected categories? This cannot be undone.
+          </p>
+          <div style={{
+            maxHeight: '120px',
+            overflowY: 'auto',
+            background: 'var(--bg-main)',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            border: '1px solid var(--border)',
+            textAlign: 'left',
+            fontSize: '0.85rem'
+          }}>
+            <ul style={{ margin: 0, paddingLeft: '16px', listStyleType: 'disc' }}>
+              {selectedNames.map((name, i) => (
+                <li key={i} style={{ color: 'var(--text-main)', fontWeight: 600 }}>{name}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ),
+      confirmText: "Delete Selected",
       onConfirm: async () => {
         try {
-          const res = await fetch(API_ENDPOINTS.CATEGORIES.DETAIL(id), { 
-            method: 'DELETE',
-            headers: getAuthHeaders()
+          const response = await fetch(API_ENDPOINTS.CATEGORIES.BULK_DELETE, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ ids: selectedIds })
           });
-          if (res.ok) {
-            updateGlobalCache(null, id);
+          if (response.ok) {
+            selectedIds.forEach(id => updateGlobalCache(null, id));
+            setSelectedIds([]);
+            setIsSelectionMode(false);
             queryClient.invalidateQueries({ queryKey: ['categories'] });
           } else {
-            const errData = await res.json();
-            alert(errData.detail || "Could not delete category.");
+            const errData = await response.json();
+            alert(errData.detail || "Error bulk deleting categories.");
           }
         } catch (err) {
-          console.error(err);
+          console.error("Error bulk deleting categories:", err);
         }
       }
     });
   };
-
-  const categories = data?.pages.flatMap(page => page.items) || [];
 
   return (
     <section className={styles.sectionCard}>
@@ -162,6 +219,25 @@ const CategoriesTab = ({ onConfirmDelete }) => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          {!isSelectionMode ? (
+            <button 
+              className={styles.deleteModeBtn}
+              onClick={() => setIsSelectionMode(true)}
+              disabled={categories.length === 0}
+            >
+              <Trash2 size={18} /> Delete
+            </button>
+          ) : (
+            <button 
+              className={styles.cancelSelectionBtn}
+              onClick={() => {
+                setIsSelectionMode(false);
+                setSelectedIds([]);
+              }}
+            >
+              <X size={18} /> Cancel
+            </button>
+          )}
           <button 
             className={styles.addPrimaryBtn}
             onClick={() => setEditModal({ isOpen: true, mode: 'create', data: { name: '' } })}
@@ -171,6 +247,33 @@ const CategoriesTab = ({ onConfirmDelete }) => {
         </div>
       </div>
 
+      {isSelectionMode && categories.length > 0 && (
+        <div className={styles.bulkToolbar}>
+          <div className={styles.bulkLeft}>
+            <input 
+              type="checkbox" 
+              checked={allSelected} 
+              onChange={handleSelectAll} 
+              id="selectAllCategories"
+              className={styles.rowCheckbox}
+            />
+            <label htmlFor="selectAllCategories" className={styles.bulkLabel}>
+              {selectedIds.length > 0 
+                ? `Selected ${selectedIds.length} of ${categories.length} loaded` 
+                : `Select All (${categories.length} loaded)`}
+            </label>
+          </div>
+          <button 
+            className={styles.bulkDeleteBtn} 
+            onClick={handleBulkDelete}
+            disabled={selectedIds.length === 0}
+            style={selectedIds.length === 0 ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+          >
+            <Trash2 size={16} /> Delete Selected ({selectedIds.length})
+          </button>
+        </div>
+      )}
+
       <div className={styles.categoryGrid}>
         {status === 'pending' ? (
           <div className={styles.loader}><Loader2 size={24} className={styles.spin} /></div>
@@ -179,13 +282,20 @@ const CategoriesTab = ({ onConfirmDelete }) => {
         ) : (
           categories.map(category => (
             <div key={category.id} className={styles.categoryCard}>
-              <span className={styles.catName}>{category.name}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1 }}>
+                {isSelectionMode && (
+                  <input 
+                    type="checkbox" 
+                    checked={selectedIds.includes(category.id)} 
+                    onChange={() => handleSelectRow(category.id)} 
+                    className={styles.rowCheckbox}
+                  />
+                )}
+                <span className={styles.catName}>{category.name}</span>
+              </div>
               <div className={styles.catActions}>
                 <button onClick={() => setEditModal({ isOpen: true, mode: 'edit', data: { ...category } })} className={styles.editBtn}>
                   <Edit size={14} />
-                </button>
-                <button onClick={() => handleDelete(category.id)} className={styles.deleteBtn}>
-                  <Trash2 size={14} />
                 </button>
               </div>
             </div>

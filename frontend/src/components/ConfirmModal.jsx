@@ -19,7 +19,7 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, confirmText 
           
           <div className={styles.textGroup}>
             <h3 className={styles.title}>{title}</h3>
-            <p className={styles.message}>{message}</p>
+            <div className={styles.message}>{message}</div>
           </div>
         </div>
 

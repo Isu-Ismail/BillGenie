@@ -88,6 +88,10 @@ const Entry = () => {
   const [importStatus, setImportStatus] = useState('');
   const [importLogs, setImportLogs] = useState([]);
   const [isImporting, setIsImporting] = useState(false);
+  const [selectedImportFile, setSelectedImportFile] = useState(null);
+  const [importStep, setImportStep] = useState('select'); // 'select' | 'analyzing' | 'analysis_results' | 'importing' | 'completed'
+  const [analysisResults, setAnalysisResults] = useState(null);
+  const [activeAbortController, setActiveAbortController] = useState(null);
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -284,52 +288,126 @@ const Entry = () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Import Template');
 
-    // Setup Columns matching Report Export + new features
+    // Setup Columns matching request: no TOTAL column/row, placeholder CATEGORY 1 to 4
     const columns = [
-      { header: 'DONOR NAME', key: 'donor_name', width: 25 },
-      { header: 'DOOR NO', key: 'door_no', width: 12 },
-      { header: 'STREET', key: 'street', width: 20 },
-      { header: 'MOBILE', key: 'mobile', width: 15 },
-      { header: 'GENDER', key: 'gender', width: 10 },
-      { header: 'HIJRI YEAR', key: 'hijri_year', width: 12 },
-      { header: 'TRUST NAME', key: 'trust_name', width: 25 },
+      { header: 'DONOR NAME', key: 'donor_name' },
+      { header: 'DOOR NO', key: 'door_no' },
+      { header: 'STREET', key: 'street' },
+      { header: 'MOBILE', key: 'mobile' },
+      { header: 'GENDER', key: 'gender' },
+      { header: 'TRUST NAME', key: 'trust_name' },
+      { header: 'HIJRI YEAR', key: 'hijri_year' },
+      { header: 'CATEGORY 1', key: 'category_1' },
+      { header: 'CATEGORY 2', key: 'category_2' },
+      { header: 'CATEGORY 3', key: 'category_3' },
+      { header: 'CATEGORY 4', key: 'category_4' },
     ];
-
-    categories.forEach(cat => {
-      columns.push({ header: cat.name.toUpperCase(), key: cat.id, width: 15 });
-    });
 
     worksheet.columns = columns;
 
-    // Style Header
-    const headerRow = worksheet.getRow(1);
-    headerRow.height = 30;
-    headerRow.eachCell((cell) => {
-      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } }; // Indigo
-      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    // Auto-fit column widths based on header length
+    worksheet.columns.forEach((column) => {
+      let maxLen = 0;
+      if (column.header) {
+        maxLen = column.header.toString().length;
+      }
+      column.width = Math.max(maxLen + 4, 14);
     });
+
+    // Style Header Row
+    const headerRow = worksheet.getRow(1);
+    headerRow.height = 28;
+    headerRow.eachCell((cell) => {
+      cell.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } }; // Premium Indigo
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF312E81' } },
+        left: { style: 'thin', color: { argb: 'FF312E81' } },
+        bottom: { style: 'medium', color: { argb: 'FF312E81' } },
+        right: { style: 'thin', color: { argb: 'FF312E81' } }
+      };
+    });
+
+    // Create 15 pre-styled empty rows to receive input
+    for (let r = 2; r <= 16; r++) {
+      const row = worksheet.getRow(r);
+      row.height = 20;
+      
+      for (let colIdx = 1; colIdx <= columns.length; colIdx++) {
+        const cell = row.getCell(colIdx);
+        cell.font = { name: 'Segoe UI', size: 10 };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+        };
+        
+        // Alignments based on columns
+        const colKey = columns[colIdx - 1]?.key;
+        if (['donor_name', 'street', 'trust_name'].includes(colKey)) {
+          cell.alignment = { vertical: 'middle', horizontal: 'left' };
+        } else if (['door_no', 'mobile', 'gender', 'hijri_year'].includes(colKey)) {
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        } else {
+          // Categories
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+          cell.numFmt = '#,##0';
+        }
+      }
+    }
+
+    // Freeze the top row so headers remain visible on scroll
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
 
     // Generate and Save
     const buffer = await workbook.xlsx.writeBuffer();
     saveAs(new Blob([buffer]), `BillGenie_Import_Template_${new Date().getFullYear()}.xlsx`);
   };
 
-  const handleImportExcel = async (e) => {
+  const closeImportModal = () => {
+    if (activeAbortController) {
+      activeAbortController.abort();
+    }
+    setShowImportModal(false);
+    setImportStep('select');
+    setSelectedImportFile(null);
+    setAnalysisResults(null);
+    setImportLogs([]);
+    setActiveAbortController(null);
+  };
+
+  const handleAbortImport = () => {
+    if (activeAbortController) {
+      activeAbortController.abort();
+    }
+  };
+
+  const handleImportExcel = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setSelectedImportFile(file);
+    runExcelAnalysis(file);
+  };
 
-    setIsImporting(true);
+  const runExcelAnalysis = async (file) => {
+    setImportStep('analyzing');
     setLoading(true);
     setImportProgress(0);
-    setImportStatus('Preparing upload...');
+    setImportStatus('Uploading and parsing Excel file...');
     setImportLogs([]);
+    setAnalysisResults(null);
     setMessage({ type: '', text: '' });
+
+    const controller = new AbortController();
+    setActiveAbortController(controller);
 
     const formData = new FormData();
     formData.append('file', file);
     formData.append('trust_id', entries[0]?.trust_id || '');
     formData.append('hijri_year', entries[0]?.hijri_year || '1446');
+    formData.append('analyze_only', 'true');
 
     try {
       const headers = getAuthHeaders();
@@ -338,12 +416,13 @@ const Entry = () => {
       const response = await fetch(API_ENDPOINTS.TRANSACTIONS.IMPORT_EXCEL, {
         method: 'POST',
         headers,
-        body: formData
+        body: formData,
+        signal: controller.signal
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Upload failed with status code ${response.status}`);
+        throw new Error(errorData.detail || `Analysis failed with status code ${response.status}`);
       }
 
       const reader = response.body.getReader();
@@ -356,29 +435,110 @@ const Entry = () => {
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
-        buffer = lines.pop(); // Keep the last partial line
+        buffer = lines.pop();
 
         for (const line of lines) {
           if (!line.trim()) continue;
           try {
             const data = JSON.parse(line);
-            if (data.event === 'progress') {
+            if (data.event === 'progress' || data.event === 'analysis_progress') {
               setImportProgress(data.percentage || 0);
               setImportStatus(data.message);
               setImportLogs(prev => [...prev, data.message]);
-            } else if (data.event === 'row') {
+            } else if (data.event === 'analysis_complete') {
+              setImportProgress(100);
+              setImportStatus(data.message);
+              setAnalysisResults(data.results);
+              setImportStep('analysis_results');
+            } else if (data.event === 'error') {
+              throw new Error(data.message);
+            }
+          } catch (jsonErr) {
+            console.error("NDJSON Parse error during analysis:", jsonErr, "line:", line);
+          }
+        }
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        setMessage({ type: 'warning', text: 'Excel analysis was cancelled.' });
+        setImportStatus('Analysis cancelled.');
+      } else {
+        setMessage({ type: 'error', text: error.message });
+        setImportStatus(`Analysis error: ${error.message}`);
+      }
+      setImportStep('select');
+    } finally {
+      setLoading(false);
+      setActiveAbortController(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const runExcelImport = async () => {
+    if (!selectedImportFile) return;
+
+    setImportStep('importing');
+    setLoading(true);
+    setImportProgress(0);
+    setImportStatus('Initializing database import...');
+    setImportLogs([]);
+    setMessage({ type: '', text: '' });
+
+    const controller = new AbortController();
+    setActiveAbortController(controller);
+
+    const formData = new FormData();
+    formData.append('file', selectedImportFile);
+    formData.append('trust_id', entries[0]?.trust_id || '');
+    formData.append('hijri_year', entries[0]?.hijri_year || '1446');
+    formData.append('analyze_only', 'false');
+
+    try {
+      const headers = getAuthHeaders();
+      delete headers['Content-Type'];
+
+      const response = await fetch(API_ENDPOINTS.TRANSACTIONS.IMPORT_EXCEL, {
+        method: 'POST',
+        headers,
+        body: formData,
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Import failed with status code ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const data = JSON.parse(line);
+            if (data.event === 'progress' || data.event === 'row') {
               setImportProgress(data.percentage || 0);
-              setImportStatus(`Processing: row ${data.current} of ${data.total}`);
+              setImportStatus(data.message);
               setImportLogs(prev => [...prev, data.message]);
             } else if (data.event === 'complete') {
               setImportProgress(100);
               setImportStatus(data.message);
               setImportLogs(prev => [...prev, `🎉 ${data.message}`]);
+              setImportStep('completed');
               
               // Refresh master data (trusts, categories)
               await fetchData();
               
-              // Clear specific caches to force re-fetch
+              // Clear caches
               const userJson = localStorage.getItem('user');
               const userId = userJson ? JSON.parse(userJson)?.id : 'default';
               sessionStorage.removeItem('entry_trust_category_cache');
@@ -387,17 +547,22 @@ const Entry = () => {
               throw new Error(data.message);
             }
           } catch (jsonErr) {
-            console.error("NDJSON Parse error:", jsonErr, "on line:", line);
+            console.error("NDJSON Parse error during import:", jsonErr, "line:", line);
           }
         }
       }
     } catch (error) {
-      setMessage({ type: 'error', text: error.message });
-      setImportStatus(`Error: ${error.message}`);
-      setImportLogs(prev => [...prev, `❌ Error: ${error.message}`]);
+      if (error.name === 'AbortError') {
+        setMessage({ type: 'error', text: 'Import cancelled. All imported records have been rolled back and deleted.' });
+        setImportStatus('Import aborted. Rolled back successfully.');
+      } else {
+        setMessage({ type: 'error', text: `Import failed: ${error.message}. All imports from this session rolled back.` });
+        setImportStatus(`Failed: ${error.message}`);
+      }
+      setImportStep('select');
     } finally {
       setLoading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setActiveAbortController(null);
     }
   };
 
@@ -813,68 +978,24 @@ const Entry = () => {
       {/* Import Modal */}
       {showImportModal && (
         <div className={styles.modalOverlay}>
-          <div className={styles.modal}>
+          <div className={styles.modal} style={{ maxWidth: importStep === 'analysis_results' ? '1050px' : '600px' }}>
             <div className={styles.modalHeader}>
               <div className={styles.modalTitleGroup}>
                 <Upload size={24} className={styles.modalIcon} />
                 <h2>Bulk Import Transactions</h2>
               </div>
               <button 
-                onClick={() => {
-                  setShowImportModal(false);
-                  setIsImporting(false);
-                  setImportLogs([]);
-                }} 
+                onClick={closeImportModal} 
                 className={styles.closeBtn}
-                disabled={loading}
+                disabled={loading && importStep !== 'analyzing' && importStep !== 'importing'}
               >
                 <X size={20} />
               </button>
             </div>
             
-            <div className={styles.importContent}>
-              {isImporting || importLogs.length > 0 ? (
-                <div className={styles.progressContainer}>
-                  <div className={styles.progressBarWrapper}>
-                    <div className={styles.progressLabel}>
-                      <span>{importStatus}</span>
-                      <span>{importProgress}%</span>
-                    </div>
-                    <div className={styles.progressBar}>
-                      <div 
-                        className={styles.progressFill} 
-                        style={{ width: `${importProgress}%` }}
-                      ></div>
-                    </div>
-                  </div>
-
-                  <div className={styles.logsConsole}>
-                    <div className={styles.logsHeader}>Import Logs</div>
-                    <div className={styles.logsBody}>
-                      {importLogs.map((log, idx) => (
-                        <div key={idx} className={styles.logLine}>
-                          {log}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className={styles.progressActions}>
-                    <button 
-                      onClick={() => {
-                        setShowImportModal(false);
-                        setIsImporting(false);
-                        setImportLogs([]);
-                      }} 
-                      className={styles.doneBtn}
-                      disabled={loading}
-                    >
-                      {loading ? 'Processing...' : 'Close & Refresh'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
+            <div className={`${styles.importContent} ${importStep === 'analysis_results' ? styles.importContentHasResults : ''}`} style={{ padding: 0 }}>
+              {importStep === 'select' && (
+                <div style={{ padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                   <div className={styles.stepCard}>
                     <div className={styles.stepNumber}>1</div>
                     <div className={styles.stepText}>
@@ -913,7 +1034,251 @@ const Entry = () => {
                     <AlertCircle size={18} />
                     <p>Ensure the <b>Trust Organization</b> and <b>Hijri Year</b> selected on the main form are correct before importing.</p>
                   </div>
-                </>
+                </div>
+              )}
+
+              {importStep === 'analyzing' && (
+                <div className={styles.progressContainer} style={{ padding: '2rem' }}>
+                  <div className={styles.progressBarWrapper}>
+                    <div className={styles.progressLabel}>
+                      <span>{importStatus}</span>
+                      <span>{importProgress}%</span>
+                    </div>
+                    <div className={styles.progressBar}>
+                      <div 
+                        className={styles.progressFill} 
+                        style={{ width: `${importProgress}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div className={styles.logsConsole}>
+                    <div className={styles.logsHeader}>Analysis Console</div>
+                    <div className={styles.logsBody}>
+                      {importLogs.map((log, idx) => (
+                        <div key={idx} className={styles.logLine}>
+                          {log}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className={styles.progressActions}>
+                    <button 
+                      onClick={handleAbortImport} 
+                      className={styles.abortBtn}
+                    >
+                      Cancel Analysis
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {importStep === 'analysis_results' && analysisResults && (
+                <div className={styles.analysisDashboard}>
+                  <div className={styles.analysisScrollBody}>
+                    <div className={styles.statsGrid}>
+                      <div className={`${styles.statCard} ${styles.success}`}>
+                        <span className={styles.statNumber}>{analysisResults.valid_rows_count}</span>
+                        <span className={styles.statLabel}>Valid Rows</span>
+                      </div>
+                      <div className={`${styles.statCard} ${styles.info}`}>
+                        <span className={styles.statNumber}>₹{analysisResults.total_amount.toLocaleString('en-IN')}</span>
+                        <span className={styles.statLabel}>Total Amount</span>
+                      </div>
+                      <div className={`${styles.statCard} ${styles.warning}`}>
+                        <span className={styles.statNumber}>{analysisResults.skipped_count}</span>
+                        <span className={styles.statLabel}>DB Duplicates</span>
+                      </div>
+                      <div className={`${styles.statCard} ${styles.danger}`}>
+                        <span className={styles.statNumber}>{analysisResults.ignored_rows_count}</span>
+                        <span className={styles.statLabel}>Ignored Rows</span>
+                      </div>
+                    </div>
+
+                    {/* Side-by-side grid */}
+                    <div className={`${styles.analysisResultsGrid} ${
+                      !(analysisResults.new_donors.length > 0 || 
+                        analysisResults.new_categories.length > 0 || 
+                        analysisResults.new_streets.length > 0 || 
+                        analysisResults.new_trusts.length > 0) ? styles.singleCol : ''
+                    }`}>
+                      {/* Entity creations */}
+                      {(analysisResults.new_donors.length > 0 || 
+                        analysisResults.new_categories.length > 0 || 
+                        analysisResults.new_streets.length > 0 || 
+                        analysisResults.new_trusts.length > 0) && (
+                        <div className={styles.entitiesBox}>
+                          <h4 className={styles.sectionHeader}>
+                            <Users size={16} /> New Entities to Be Created
+                          </h4>
+                          <div className={styles.entityLists}>
+                            {analysisResults.new_donors.length > 0 && (
+                              <div className={styles.entityCol}>
+                                <h5>Donors ({analysisResults.new_donors.length})</h5>
+                                <div className={styles.entityTags}>
+                                  {analysisResults.new_donors.map((d, i) => (
+                                    <span key={i} className={styles.entityTag} title={d}>{d.split(' (')[0]}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {analysisResults.new_categories.length > 0 && (
+                              <div className={styles.entityCol}>
+                                <h5>Categories ({analysisResults.new_categories.length})</h5>
+                                <div className={styles.entityTags}>
+                                  {analysisResults.new_categories.map((c, i) => (
+                                    <span key={i} className={styles.entityTag}>{c}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {analysisResults.new_streets.length > 0 && (
+                              <div className={styles.entityCol}>
+                                <h5>Streets ({analysisResults.new_streets.length})</h5>
+                                <div className={styles.entityTags}>
+                                  {analysisResults.new_streets.map((s, i) => (
+                                    <span key={i} className={styles.entityTag}>{s}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {analysisResults.new_trusts.length > 0 && (
+                              <div className={styles.entityCol}>
+                                <h5>Organizations ({analysisResults.new_trusts.length})</h5>
+                                <div className={styles.entityTags}>
+                                  {analysisResults.new_trusts.map((t, i) => (
+                                    <span key={i} className={styles.entityTag}>{t}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Problems / Warnings list */}
+                      <div className={styles.warningsBox}>
+                        <h4 className={styles.sectionHeader}>
+                          <AlertCircle size={16} /> Data Verification Issues ({analysisResults.problems.length})
+                        </h4>
+                        {analysisResults.problems.length > 0 ? (
+                          <div className={styles.warningList}>
+                            {analysisResults.problems.map((p, idx) => (
+                              <div key={idx} className={`${styles.warningItem} ${styles[p.type]}`}>
+                                <span className={styles.rowBadge}>Row {p.row}</span>
+                                <span>{p.message}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className={styles.cleanText}>
+                            <CheckCircle size={18} />
+                            <span>All rows are clean! No duplicates or empty cells detected.</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className={styles.modalFooter} style={{ borderTop: '1px solid var(--border)', padding: '1.25rem 2rem', marginTop: 0, background: 'var(--bg-card)' }}>
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        setImportStep('select');
+                        setSelectedImportFile(null);
+                        setAnalysisResults(null);
+                      }} 
+                      className={styles.cancelBtn}
+                    >
+                      {analysisResults.valid_rows_count === 0 ? 'Cancel' : 'Cancel Import'}
+                    </button>
+                    {analysisResults.valid_rows_count > 0 ? (
+                      <button 
+                        type="button" 
+                        onClick={runExcelImport} 
+                        className={styles.confirmBtn}
+                      >
+                        Confirm & Import
+                      </button>
+                    ) : (
+                      <span className={styles.noImportMsg}>
+                        <AlertCircle size={16} /> No rows to import
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {importStep === 'importing' && (
+                <div className={styles.progressContainer} style={{ padding: '2rem' }}>
+                  <div className={styles.progressBarWrapper}>
+                    <div className={styles.progressLabel}>
+                      <span>{importStatus}</span>
+                      <span>{importProgress}%</span>
+                    </div>
+                    <div className={styles.progressBar}>
+                      <div 
+                        className={styles.progressFill} 
+                        style={{ width: `${importProgress}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div className={styles.logsConsole}>
+                    <div className={styles.logsHeader}>Import Logs</div>
+                    <div className={styles.logsBody}>
+                      {importLogs.map((log, idx) => (
+                        <div key={idx} className={styles.logLine}>
+                          {log}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className={styles.progressActions}>
+                    <button 
+                      onClick={handleAbortImport} 
+                      className={styles.abortBtn}
+                    >
+                      Cancel & Rollback
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {importStep === 'completed' && (
+                <div className={styles.progressContainer} style={{ padding: '2rem', alignItems: 'center', textAlign: 'center' }}>
+                  <CheckCircle size={64} style={{ color: '#10b981', marginBottom: '1rem' }} />
+                  <h3>Import Completed!</h3>
+                  <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem' }}>{importStatus}</p>
+                  
+                  <div className={styles.logsConsole} style={{ width: '100%', textAlign: 'left' }}>
+                    <div className={styles.logsHeader}>Completed Logs</div>
+                    <div className={styles.logsBody}>
+                      {importLogs.slice(-20).map((log, idx) => (
+                        <div key={idx} className={styles.logLine}>
+                          {log}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className={styles.progressActions} style={{ marginTop: '1.5rem', width: '100%', justifyContent: 'center' }}>
+                    <button 
+                      onClick={() => {
+                        setShowImportModal(false);
+                        setImportStep('select');
+                        setSelectedImportFile(null);
+                        setAnalysisResults(null);
+                        setImportLogs([]);
+                      }} 
+                      className={styles.doneBtn}
+                    >
+                      Close & Finish
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>

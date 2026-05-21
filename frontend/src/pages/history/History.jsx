@@ -123,10 +123,37 @@ const History = () => {
 
   const handleBatchDeleteClick = () => {
     if (selectedIds.length === 0) return;
+    
+    const selectedTransactions = transactions.filter(t => selectedIds.includes(t.id));
+
     setConfirmState({
       isOpen: true,
       title: "Delete Selected Ledgers",
-      message: `Are you sure you want to delete the ${selectedIds.length} selected annual ledgers? This action cannot be undone.`,
+      message: (
+        <div>
+          <p style={{ marginBottom: '10px' }}>
+            Are you sure you want to delete the following {selectedIds.length} selected annual ledgers? This action cannot be undone.
+          </p>
+          <div style={{
+            maxHeight: '150px',
+            overflowY: 'auto',
+            background: 'var(--bg-main)',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            border: '1px solid var(--border)',
+            textAlign: 'left',
+            fontSize: '0.85rem'
+          }}>
+            <ul style={{ margin: 0, paddingLeft: '16px', listStyleType: 'disc' }}>
+              {selectedTransactions.map((t, i) => (
+                <li key={i} style={{ color: 'var(--text-main)', marginBottom: '4px' }}>
+                  <span style={{ fontWeight: 600 }}>{t.donor_name}</span> (Year: {t.hijri_year} AH, Amount: ₹{t.total_amount.toFixed(2)})
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ),
       confirmText: "Delete All",
       onConfirm: () => performBatchDelete()
     });
@@ -548,10 +575,33 @@ const History = () => {
 
 
   const handleDeleteClick = (id) => {
+    const t = transactions.find(x => x.id === id);
+    if (!t) return;
     setConfirmState({
       isOpen: true,
       title: "Delete Annual Ledger",
-      message: "Are you sure you want to delete this entire annual ledger? This action cannot be undone.",
+      message: (
+        <div>
+          <p style={{ marginBottom: '10px' }}>
+            Are you sure you want to delete this annual ledger? This action cannot be undone.
+          </p>
+          <div style={{
+            background: 'var(--bg-main)',
+            padding: '10px 12px',
+            borderRadius: '6px',
+            border: '1px solid var(--border)',
+            textAlign: 'left',
+            fontSize: '0.85rem',
+            color: 'var(--text-main)'
+          }}>
+            <div style={{ marginBottom: '4px' }}><strong>Donor:</strong> {t.donor_name}</div>
+            <div style={{ marginBottom: '4px' }}><strong>Organization:</strong> {t.trust_name || 'No Trust'}</div>
+            <div style={{ marginBottom: '4px' }}><strong>Hijri Year:</strong> {t.hijri_year} AH</div>
+            <div style={{ marginBottom: '4px' }}><strong>Payment Date:</strong> {t.payment_date}</div>
+            <div><strong>Total Amount:</strong> ₹{t.total_amount.toFixed(2)}</div>
+          </div>
+        </div>
+      ),
       confirmText: "Delete",
       onConfirm: () => performDelete(id)
     });
