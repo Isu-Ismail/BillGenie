@@ -133,6 +133,7 @@ async def list_donors(
         return {"items": [], "total": 0}
 
 @router.get("/detail/{donor_id}")
+@router.get("/{donor_id}")
 async def get_donor_detail_explicit(donor_id: str, x_user_id: Optional[str] = Header(None)):
     try:
         record = pb.collection('donors').get_one(donor_id)

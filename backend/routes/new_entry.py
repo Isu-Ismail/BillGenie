@@ -294,7 +294,13 @@ async def import_excel(
                 yield json.dumps({"event": "error", "message": "Invalid Excel template. Missing 'DONOR NAME' column."}) + "\n"
                 return
 
-            df = df[df["DONOR NAME"].astype(str).str.upper() != "TOTALS"]
+            # Remove empty rows and rows containing "TOTAL" in the donor name (e.g., category-wise totals row)
+            donor_name_series = df["DONOR NAME"].astype(str).str.strip().str.upper()
+            df = df[
+                (donor_name_series != "") & 
+                (donor_name_series != "NAN") & 
+                (~donor_name_series.str.contains("TOTAL", na=False))
+            ]
             total_rows = len(df)
             yield json.dumps({"event": "progress", "message": f"Excel parsed. Found {total_rows} rows to process.", "percentage": 10}) + "\n"
 

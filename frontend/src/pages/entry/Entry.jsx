@@ -301,22 +301,6 @@ const Entry = () => {
 
     worksheet.columns = columns;
 
-    // Add TOTALS Row (as requested, same as report export)
-    const totalsData = {
-      donor_name: 'TOTALS',
-      door_no: '',
-      street: '',
-      mobile: '',
-      gender: '',
-      hijri_year: '',
-      trust_name: ''
-    };
-
-    categories.forEach(cat => {
-      totalsData[cat.id] = 0;
-    });
-    worksheet.addRow(totalsData);
-
     // Style Header
     const headerRow = worksheet.getRow(1);
     headerRow.height = 30;

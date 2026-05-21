@@ -65,8 +65,17 @@ const History = () => {
   // Edit Modal State
   const [editModal, setEditModal] = useState({ show: false, transaction: null });
   const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [donorDetails, setDonorDetails] = useState(null);
+  const [loadingDonor, setLoadingDonor] = useState(false);
+  const [showDonorDetails, setShowDonorDetails] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [selectedIds, setSelectedIds] = useState([]);
+
+  const handleOpenDetails = (t) => {
+    setSelectedTransaction(t);
+    setDonorDetails(null);
+    setShowDonorDetails(false);
+  };
   const [confirmState, setConfirmState] = useState({
     isOpen: false,
     title: '',
@@ -622,6 +631,34 @@ const History = () => {
     setEditModal({ ...editModal, transaction: updated });
   };
 
+  const handleToggleDonorDetails = async () => {
+    if (showDonorDetails) {
+      setShowDonorDetails(false);
+      return;
+    }
+    
+    if (donorDetails) {
+      setShowDonorDetails(true);
+      return;
+    }
+    
+    setLoadingDonor(true);
+    try {
+      const res = await fetch(API_ENDPOINTS.DONORS.DETAIL(selectedTransaction.donor_id), {
+        headers: getAuthHeaders()
+      });
+      const result = await res.json();
+      if (result.status) {
+        setDonorDetails(result.data);
+        setShowDonorDetails(true);
+      }
+    } catch (err) {
+      console.error("Failed to fetch donor details:", err);
+    } finally {
+      setLoadingDonor(false);
+    }
+  };
+
   return (
     <div className={styles.container}>
       <header className={styles.header}>
@@ -891,7 +928,7 @@ const History = () => {
                   <tr 
                     key={t.id} 
                     className={styles.tableRow}
-                    onClick={() => setSelectedTransaction(t)}
+                    onClick={() => handleOpenDetails(t)}
                   >
                     <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
                       <input 
@@ -1052,13 +1089,55 @@ const History = () => {
               <div className={styles.viewerHeaderBlock}>
                 <div className={styles.viewerDonorInfo}>
                   <label>Donor</label>
-                  <h3>{selectedTransaction.donor_name}</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginTop: '4px' }}>
+                    <h3 style={{ margin: 0 }}>{selectedTransaction.donor_name}</h3>
+                    <button 
+                      type="button" 
+                      onClick={handleToggleDonorDetails} 
+                      className={styles.showDonorDetailBtn}
+                      disabled={loadingDonor}
+                    >
+                      {loadingDonor ? 'Loading...' : showDonorDetails ? 'Hide Details' : 'Show Details'}
+                    </button>
+                  </div>
                 </div>
                 <div className={styles.viewerTotalBlock}>
                   <label>Total Collected</label>
                   <div className={styles.viewerTotalAmount}>₹{selectedTransaction.total_amount.toFixed(2)}</div>
                 </div>
               </div>
+
+              {showDonorDetails && donorDetails && (
+                <div className={styles.donorDetailsCard}>
+                  <h4 className={styles.donorDetailsTitle}>Donor Profile Details</h4>
+                  <div className={styles.donorDetailsGrid}>
+                    <div className={styles.donorDetailsItem}>
+                      <span className={styles.donorDetailsLabel}>Gender</span>
+                      <span className={styles.donorDetailsValue}>{donorDetails.gender === 'M' ? 'Male' : 'Female'}</span>
+                    </div>
+                    <div className={styles.donorDetailsItem}>
+                      <span className={styles.donorDetailsLabel}>Mobile</span>
+                      <span className={styles.donorDetailsValue}>{donorDetails.mobile || 'No Mobile'}</span>
+                    </div>
+                    <div className={styles.donorDetailsItem} style={{ gridColumn: 'span 2' }}>
+                      <span className={styles.donorDetailsLabel}>Address</span>
+                      <span className={styles.donorDetailsValue}>
+                        {donorDetails.door_no ? `${donorDetails.door_no}, ` : ''}{donorDetails.street || 'No Address'}
+                      </span>
+                    </div>
+                    <div className={styles.donorDetailsItem} style={{ gridColumn: 'span 2' }}>
+                      <span className={styles.donorDetailsLabel}>Membership</span>
+                      <span className={styles.donorDetailsValue}>
+                        {donorDetails.is_member ? (
+                          <span className={styles.memberBadgeInline}>
+                            Registered Member {donorDetails.member_id ? `#${donorDetails.member_id}` : ''}
+                          </span>
+                        ) : 'Regular Donor'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className={styles.viewerMetaGrid}>
                 <div className={styles.viewerMetaItem}>
