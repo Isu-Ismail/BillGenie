@@ -30,35 +30,63 @@ async def list_donors(
     search: Optional[str] = Query(None),
     page: int = 1,
     per_page: int = 20,
+    offset: Optional[int] = Query(None),
+    limit: Optional[int] = Query(None),
     x_user_id: Optional[str] = Header(None)
 ):
     try:
+        # Determine paging boundaries
+        is_offset_paging = (offset is not None and limit is not None)
+        
         if not search:
             query_params = {}
             if x_user_id:
                 query_params["filter"] = f'created_by = "{x_user_id}"'
-            result = pb.collection('donors').get_list(page, per_page, query_params)
-            return {
-                "items": [
-                    {
-                        "id": r.id,
-                        "name": r.name,
-                        "door_no": getattr(r, 'door_no', ''),
-                        "street": getattr(r, 'street', ''),
-                        "mobile": getattr(r, 'mobile', ''),
-                        "gender": getattr(r, 'gender', ''),
-                        "is_member": getattr(r, 'is_member', False),
-                        "member_id": getattr(r, 'member_id', None)
-                    }
-                    for r in result.items
-                ],
-                "total": result.total_items,
-                "page": result.page,
-                "per_page": result.per_page
-            }
+            
+            if is_offset_paging:
+                effective_per_page = max(1, offset + limit)
+                result = pb.collection('donors').get_list(1, effective_per_page, query_params)
+                items = result.items[offset:]
+                return {
+                    "items": [
+                        {
+                            "id": r.id,
+                            "name": r.name,
+                            "door_no": getattr(r, 'door_no', ''),
+                            "street": getattr(r, 'street', ''),
+                            "mobile": getattr(r, 'mobile', ''),
+                            "gender": getattr(r, 'gender', ''),
+                            "is_member": getattr(r, 'is_member', False),
+                            "member_id": getattr(r, 'member_id', None)
+                        }
+                        for r in items
+                    ],
+                    "total": result.total_items,
+                    "offset": offset,
+                    "limit": limit
+                }
+            else:
+                result = pb.collection('donors').get_list(page, per_page, query_params)
+                return {
+                    "items": [
+                        {
+                            "id": r.id,
+                            "name": r.name,
+                            "door_no": getattr(r, 'door_no', ''),
+                            "street": getattr(r, 'street', ''),
+                            "mobile": getattr(r, 'mobile', ''),
+                            "gender": getattr(r, 'gender', ''),
+                            "is_member": getattr(r, 'is_member', False),
+                            "member_id": getattr(r, 'member_id', None)
+                        }
+                        for r in result.items
+                    ],
+                    "total": result.total_items,
+                    "page": result.page,
+                    "per_page": result.per_page
+                }
 
         # FUZZY SEARCH
-        # 1. Try Fuzzy Search first
         try:
             query_params = {}
             if x_user_id:
@@ -90,15 +118,26 @@ async def list_donors(
                         "score": score
                     })
             
-            start = (page - 1) * per_page
-            end = start + per_page
-            print(f"DEBUG: Returning {len(items)} fuzzy matches: {[i['name'] for i in items[:5]]}...")
-            return {
-                "items": items[start:end],
-                "total": len(items),
-                "page": page,
-                "per_page": per_page
-            }
+            if is_offset_paging:
+                start = offset
+                end = offset + limit
+                print(f"DEBUG: Returning {len(items)} fuzzy matches (offset pagination): {[i['name'] for i in items[start:end]]}...")
+                return {
+                    "items": items[start:end],
+                    "total": len(items),
+                    "offset": offset,
+                    "limit": limit
+                }
+            else:
+                start = (page - 1) * per_page
+                end = start + per_page
+                print(f"DEBUG: Returning {len(items)} fuzzy matches: {[i['name'] for i in items[start:end]]}...")
+                return {
+                    "items": items[start:end],
+                    "total": len(items),
+                    "page": page,
+                    "per_page": per_page
+                }
         except Exception as fuzzy_err:
             print(f"Fuzzy search failed, falling back to standard: {fuzzy_err}")
             # Fallback to standard PocketBase search
@@ -108,26 +147,50 @@ async def list_donors(
             if x_user_id:
                 filter_str = f'({filter_str}) && created_by = "{x_user_id}"'
             
-            result = pb.collection('donors').get_list(page, per_page, {"filter": filter_str})
-            print(f"DEBUG: Returning {len(result.items)} standard fallback matches.")
-            return {
-                "items": [
-                    {
-                        "id": r.id,
-                        "name": r.name,
-                        "door_no": getattr(r, 'door_no', ''),
-                        "street": getattr(r, 'street', ''),
-                        "mobile": getattr(r, 'mobile', ''),
-                        "gender": getattr(r, 'gender', ''),
-                        "is_member": getattr(r, 'is_member', False),
-                        "member_id": getattr(r, 'member_id', None)
-                    }
-                    for r in result.items
-                ],
-                "total": result.total_items,
-                "page": result.page,
-                "per_page": result.per_page
-            }
+            if is_offset_paging:
+                effective_per_page = max(1, offset + limit)
+                result = pb.collection('donors').get_list(1, effective_per_page, {"filter": filter_str})
+                items = result.items[offset:]
+                print(f"DEBUG: Returning {len(items)} standard fallback matches (offset pagination).")
+                return {
+                    "items": [
+                        {
+                            "id": r.id,
+                            "name": r.name,
+                            "door_no": getattr(r, 'door_no', ''),
+                            "street": getattr(r, 'street', ''),
+                            "mobile": getattr(r, 'mobile', ''),
+                            "gender": getattr(r, 'gender', ''),
+                            "is_member": getattr(r, 'is_member', False),
+                            "member_id": getattr(r, 'member_id', None)
+                        }
+                        for r in items
+                    ],
+                    "total": result.total_items,
+                    "offset": offset,
+                    "limit": limit
+                }
+            else:
+                result = pb.collection('donors').get_list(page, per_page, {"filter": filter_str})
+                print(f"DEBUG: Returning {len(result.items)} standard fallback matches.")
+                return {
+                    "items": [
+                        {
+                            "id": r.id,
+                            "name": r.name,
+                            "door_no": getattr(r, 'door_no', ''),
+                            "street": getattr(r, 'street', ''),
+                            "mobile": getattr(r, 'mobile', ''),
+                            "gender": getattr(r, 'gender', ''),
+                            "is_member": getattr(r, 'is_member', False),
+                            "member_id": getattr(r, 'member_id', None)
+                        }
+                        for r in result.items
+                    ],
+                    "total": result.total_items,
+                    "page": result.page,
+                    "per_page": result.per_page
+                }
     except Exception as e:
         print(f"ERROR listing donors: {e}")
         return {"items": [], "total": 0}

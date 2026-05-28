@@ -19,6 +19,9 @@ import styles from './DonorsTab.module.css';
 import { API_ENDPOINTS, getAuthHeaders } from '../../../../api';
 import StreetSelect from '../../../entry/StreetSelect';
 
+// Module-level variable persists for the session (survives component unmounting when switching tabs), but resets on full page reload
+let sessionLoadMoreCount = 0;
+
 const DonorsTab = ({ onConfirmDelete }) => {
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -48,7 +51,7 @@ const DonorsTab = ({ onConfirmDelete }) => {
     }
   }, [location]);
 
-  // Infinite query for paginated donors
+  // Infinite query for paginated donors with growing page size
   const {
     data,
     fetchNextPage,
@@ -57,8 +60,20 @@ const DonorsTab = ({ onConfirmDelete }) => {
     status
   } = useInfiniteQuery({
     queryKey: ['donors', debouncedSearch],
-    queryFn: async ({ pageParam = 1 }) => {
-      let url = `${API_ENDPOINTS.DONORS.BASE}?page=${pageParam}&per_page=20`;
+    queryFn: async ({ pageParam = 0 }) => {
+      // Determine the limit to fetch dynamically based on load more calls in the session
+      let limit = 20;
+      if (pageParam > 0) {
+        if (sessionLoadMoreCount === 1) {
+          limit = 20;
+        } else if (sessionLoadMoreCount === 2) {
+          limit = 50;
+        } else if (sessionLoadMoreCount >= 3) {
+          limit = 100;
+        }
+      }
+      
+      let url = `${API_ENDPOINTS.DONORS.BASE}?offset=${pageParam}&limit=${limit}`;
       if (debouncedSearch) url += `&search=${encodeURIComponent(debouncedSearch)}`;
       
       const response = await fetch(url, { headers: getAuthHeaders() });
@@ -66,8 +81,14 @@ const DonorsTab = ({ onConfirmDelete }) => {
       return response.json();
     },
     getNextPageParam: (lastPage) => {
-      const totalPages = Math.ceil(lastPage.total / lastPage.per_page);
-      return lastPage.page < totalPages ? lastPage.page + 1 : undefined;
+      if (lastPage.offset !== undefined && lastPage.limit !== undefined) {
+        const nextOffset = lastPage.offset + lastPage.items.length;
+        return nextOffset < lastPage.total ? nextOffset : undefined;
+      }
+      // Fallback
+      const totalPages = Math.ceil(lastPage.total / (lastPage.per_page || 20));
+      const currentPage = lastPage.page || 1;
+      return currentPage < totalPages ? currentPage + 1 : undefined;
     },
     staleTime: 1000 * 60 * 5, // 5 minutes cache
   });
@@ -316,7 +337,10 @@ const DonorsTab = ({ onConfirmDelete }) => {
         <div className={styles.loadMoreWrapper}>
           <button 
             className={styles.loadMoreBtn} 
-            onClick={() => fetchNextPage()} 
+            onClick={() => {
+              sessionLoadMoreCount++;
+              fetchNextPage();
+            }} 
             disabled={isFetchingNextPage}
           >
             {isFetchingNextPage ? <Loader2 size={18} className={styles.spin} /> : 'Load More Donors'}

@@ -92,8 +92,9 @@ def update_cached_data(data_type, data, filters_dict, user_id=None):
         user_id = resolve_user_id(user_id)
 
         import datetime
+        ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
         # Prepare value with timestamp
-        data["last_generated"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        data["last_generated"] = datetime.datetime.now(ist).strftime("%d %b %Y|%I:%M %p")
         data["is_cached"] = True
         
         filter_parts = [f'data_type = "{data_type}"']

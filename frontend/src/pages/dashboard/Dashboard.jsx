@@ -244,7 +244,22 @@ const Dashboard = () => {
         <div className={styles.metaBar}>
           <div className={styles.metaItem}>
             <TrendingUp size={14} />
-            <span>Last Generated: <b>{statsData.last_generated}</b></span>
+            <span>Last Generated:</span>
+            {(() => {
+              const str = statsData.last_generated;
+              let d = str, t = '';
+              if (str.includes('|')) { [d, t] = str.split('|'); }
+              else if (str.includes(' ')) {
+                const parts = str.split(' ');
+                d = parts[0]; t = parts.slice(1).join(' ');
+              }
+              return (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginLeft: '6px', background: 'rgba(139, 92, 246, 0.1)', padding: '2px 8px', borderRadius: '12px', border: '1px solid rgba(139, 92, 246, 0.2)' }}>
+                  <span style={{ fontWeight: '600', color: '#6d28d9' }}>{d}</span>
+                  {t && <span style={{ fontSize: '0.85em', color: '#8b5cf6', backgroundColor: 'rgba(255,255,255,0.7)', padding: '2px 6px', borderRadius: '6px', fontWeight: '500' }}>{t}</span>}
+                </div>
+              );
+            })()}
           </div>
           <div className={styles.metaItem}>
             <Shield size={14} />
